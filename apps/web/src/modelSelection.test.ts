@@ -3,6 +3,7 @@ import { DEFAULT_UNIFIED_SETTINGS, type UnifiedSettings } from "@t3tools/contrac
 import { describe, expect, it } from "vite-plus/test";
 import { deriveProviderInstanceEntries } from "./providerInstances";
 import {
+  getAppModelOptions,
   getAppModelOptionsForInstance,
   resolveAppModelSelectionForInstance,
   resolveAppModelSelectionState,
@@ -169,6 +170,52 @@ describe("instance-scoped model selection", () => {
     ]);
   });
 
+  // GLITCHY:
+  it("hides fork-hidden built-in models from provider option lists", () => {
+    const providers = [
+      provider({
+        instanceId: "claudeAgent",
+        models: ["claude-haiku-4-5", "claude-sonnet-5"],
+      }),
+    ];
+
+    expect(
+      getAppModelOptions(
+        settingsWithProviderInstances(),
+        providers,
+        ProviderDriverKind.make("claudeAgent"),
+      ).map((option) => option.slug),
+    ).toEqual(["claude-sonnet-5"]);
+  });
+
+  // GLITCHY:
+  it("keeps fork-hidden custom models in instance option lists", () => {
+    const providers = [
+      provider({
+        instanceId: "claudeAgent",
+        models: ["claude-sonnet-5"],
+      }),
+    ];
+    const settings: UnifiedSettings = {
+      ...settingsWithProviderInstances(),
+      providerInstances: {
+        ...settingsWithProviderInstances().providerInstances,
+        [ProviderInstanceId.make("claudeAgent")]: {
+          driver: ProviderDriverKind.make("claudeAgent"),
+          config: { customModels: ["claude-haiku-4-5"] },
+        },
+      },
+    };
+    const stock = deriveProviderInstanceEntries(providers).find(
+      (entry) => entry.instanceId === "claudeAgent",
+    )!;
+
+    expect(getAppModelOptionsForInstance(settings, stock).map((option) => option.slug)).toEqual([
+      "claude-sonnet-5",
+      "claude-haiku-4-5",
+    ]);
+  });
+
   it("applies persisted per-instance model ordering", () => {
     const providers = [
       provider({
@@ -189,8 +236,8 @@ describe("instance-scoped model selection", () => {
       (entry) => entry.instanceId === "claudeAgent",
     )!;
 
+    // GLITCHY: Haiku stays orderable in preferences but hidden from picker output.
     expect(getAppModelOptionsForInstance(settings, stock).map((option) => option.slug)).toEqual([
-      "claude-haiku-4-5",
       "claude-opus-4-6",
       "claude-sonnet-4-6",
     ]);

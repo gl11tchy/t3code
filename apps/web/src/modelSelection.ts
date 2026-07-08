@@ -24,6 +24,7 @@ import {
 import { ModelEsque } from "./components/chat/providerIconUtils";
 import { type ProviderInstanceEntry, deriveProviderInstanceEntries } from "./providerInstances";
 import { sortModelsForProviderInstance } from "./modelOrdering";
+import { HIDDEN_MODEL_SLUGS } from "./glitchModelPolicy"; // GLITCHY:
 
 const MAX_CUSTOM_MODEL_COUNT = 32;
 export const MAX_CUSTOM_MODEL_LENGTH = 256;
@@ -107,7 +108,7 @@ function applyInstanceModelPreferences(
     readonly modelOrder: ReadonlyArray<string>;
   },
 ): AppModelOption[] {
-  const hiddenModels = new Set(preferences.hiddenModels);
+  const hiddenModels = new Set([...preferences.hiddenModels, ...HIDDEN_MODEL_SLUGS]); // GLITCHY: fork-hidden models
   return sortModelsForProviderInstance(
     options.filter((option) => option.isCustom || !hiddenModels.has(option.slug)),
     { modelOrder: preferences.modelOrder },
