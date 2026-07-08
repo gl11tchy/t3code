@@ -1,0 +1,163 @@
+/* Glitchy Code — additive theme layer.
+ *
+ * Everything here is opt-in utility classes plus a couple of restrained global
+ * polish rules (::selection, focus-ring tint). No rule animates the whole app;
+ * flashy effects live behind classes you apply deliberately. All motion is
+ * gated on `prefers-reduced-motion` so the app stays calm when asked.
+ *
+ * Signature accent: phosphor mint/cyan (mirrors --primary / --ring in index.css).
+ * Attribution: gl11tchy.
+ */
+
+/* ------------------------------------------------------------------ *
+ * Global polish (low-noise, always on)
+ * ------------------------------------------------------------------ */
+
+/* Phosphor text selection. Uses color-mix on the live accent tokens so it
+ * tracks light/dark automatically. */
+::selection {
+  background: color-mix(in srgb, var(--primary) 32%, transparent);
+  color: var(--foreground);
+  text-shadow: none;
+}
+
+/* Subtle neon tint on the focus ring for interactive elements that already
+ * opt into a visible ring. Purely a glow layer — does not change layout or
+ * override the base outline. */
+:where(a, button, [role="button"], [tabindex]):focus-visible {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ring) 55%, transparent);
+}
+
+/* ------------------------------------------------------------------ *
+ * Keyframes
+ * ------------------------------------------------------------------ */
+
+/* RGB channel split — the classic chromatic-aberration jitter, kept small. */
+@keyframes glitch-rgb-split {
+  0%,
+  92%,
+  100% {
+    text-shadow: none;
+    transform: translate3d(0, 0, 0);
+  }
+  93% {
+    text-shadow:
+      -0.6px 0 0 color-mix(in srgb, var(--destructive) 85%, transparent),
+      0.6px 0 0 color-mix(in srgb, var(--info) 85%, transparent);
+    transform: translate3d(0.4px, 0, 0);
+  }
+  96% {
+    text-shadow:
+      0.6px 0 0 color-mix(in srgb, var(--destructive) 85%, transparent),
+      -0.6px 0 0 color-mix(in srgb, var(--info) 85%, transparent);
+    transform: translate3d(-0.4px, 0, 0);
+  }
+}
+
+/* Phosphor breathing glow for accent emphasis. */
+@keyframes glitch-phosphor-pulse {
+  0%,
+  100% {
+    text-shadow: 0 0 4px color-mix(in srgb, var(--primary) 45%, transparent);
+  }
+  50% {
+    text-shadow: 0 0 10px color-mix(in srgb, var(--primary) 70%, transparent);
+  }
+}
+
+/* Slow vertical drift for scanline overlays. */
+@keyframes glitch-scanline-drift {
+  from {
+    background-position-y: 0;
+  }
+  to {
+    background-position-y: 6px;
+  }
+}
+
+/* ------------------------------------------------------------------ *
+ * Opt-in utility classes
+ * ------------------------------------------------------------------ */
+
+/* CRT scanline overlay. Apply to a positioned container; paints faint
+ * horizontal lines over its content via a non-interactive ::after layer. */
+.glitch-scanlines {
+  position: relative;
+}
+
+.glitch-scanlines::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  opacity: 0.5;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    color-mix(in srgb, var(--foreground) 6%, transparent) 0,
+    color-mix(in srgb, var(--foreground) 6%, transparent) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  background-size: 100% 3px;
+}
+
+/* Animated variant of the scanlines (very slow drift). */
+.glitch-scanlines-animated::after {
+  animation: glitch-scanline-drift 0.6s steps(3) infinite;
+}
+
+/* RGB-split on hover/focus — chromatic aberration for a single element
+ * (labels, headings, brand marks). Cheap: text-shadow + tiny transform. */
+.glitch-rgb {
+  transition: text-shadow 120ms ease;
+}
+
+.glitch-rgb:hover,
+.glitch-rgb:focus-visible {
+  animation: glitch-rgb-split 500ms steps(2) 1;
+}
+
+/* Continuous chromatic-aberration flicker — for a small always-on accent
+ * (e.g. a status word), never for body copy. */
+.glitch-rgb-loop {
+  animation: glitch-rgb-split 3.2s steps(2) infinite;
+}
+
+/* Static RGB fringe, no motion — a permanent tasteful aberration on a mark. */
+.glitch-fringe {
+  text-shadow:
+    -0.5px 0 0 color-mix(in srgb, var(--destructive) 55%, transparent),
+    0.5px 0 0 color-mix(in srgb, var(--info) 55%, transparent);
+}
+
+/* Phosphor glow: neon halo on accent text/icons. */
+.glitch-phosphor {
+  color: var(--primary);
+  text-shadow: 0 0 6px color-mix(in srgb, var(--primary) 55%, transparent);
+}
+
+/* Breathing phosphor glow (animated variant). */
+.glitch-phosphor-pulse {
+  color: var(--primary);
+  animation: glitch-phosphor-pulse 2.4s ease-in-out infinite;
+}
+
+/* Terminal-style accent border with a faint inner phosphor bloom. */
+.glitch-terminal-frame {
+  border: 1px solid color-mix(in srgb, var(--primary) 40%, var(--border));
+  box-shadow: inset 0 0 12px -6px color-mix(in srgb, var(--primary) 60%, transparent);
+}
+
+/* ------------------------------------------------------------------ *
+ * Respect reduced-motion: keep the look, drop the animation.
+ * ------------------------------------------------------------------ */
+@media (prefers-reduced-motion: reduce) {
+  .glitch-scanlines-animated::after,
+  .glitch-rgb:hover,
+  .glitch-rgb:focus-visible,
+  .glitch-rgb-loop,
+  .glitch-phosphor-pulse {
+    animation: none;
+  }
+}

@@ -15,7 +15,7 @@ type DesktopThemeBridge = Pick<DesktopBridge, "setTheme">;
 const STORAGE_KEY = "t3code:theme";
 const MEDIA_QUERY = "(prefers-color-scheme: dark)";
 const DEFAULT_THEME_SNAPSHOT: ThemeSnapshot = {
-  theme: "system",
+  theme: "dark", // GLITCHY:
   systemDark: false,
 };
 const THEME_COLOR_META_NAME = "theme-color";
