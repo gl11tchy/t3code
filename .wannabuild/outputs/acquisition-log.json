@@ -1,0 +1,24 @@
+{
+  "entries": [
+    {
+      "timestamp": "2026-07-08T18:20:00Z",
+      "phase": "implement (Phase 4 — config unification verification)",
+      "need": "Live GUI Claude session to confirm user-level skill, subagent, and user MCP server resolve identically to terminal",
+      "attempts": [
+        {
+          "attempt": "Code-level verification of the full resolution chain",
+          "result": "PASS — ClaudeAdapter CLAUDE_SETTING_SOURCES=[\"user\",\"project\",\"local\"]; ClaudeHome.makeClaudeEnvironment leaves $HOME untouched when homePath setting is empty (real ~/.claude used); CodexHomeLayout resolves real ~/.codex in direct mode when homePath/shadowHomePath empty; no shadow-home redirection exists by default"
+        },
+        {
+          "attempt": "Existing unit coverage",
+          "result": "PASS — ClaudeHome.test.ts and CodexHomeLayout.test.ts cover home resolution passthrough"
+        },
+        {
+          "attempt": "Live in-browser verification of web app (dev:web + Playwright)",
+          "result": "PARTIAL — app boots dark-first with rebrand; full Claude session not started because dev:web alone has no backend and an actual Claude turn is billable API/subscription usage"
+        }
+      ],
+      "status": "verified-code-level; live GUI Claude-turn parity check deferred to first daily-driver session (billable acquisition — user-facing decision per doctrine). Checklist documented in docs/project/glitchy-fork.md"
+    }
+  ]
+}
