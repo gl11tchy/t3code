@@ -2,13 +2,12 @@
 import {
   DEFAULT_MODEL,
   DEFAULT_MODEL_BY_PROVIDER,
-  defaultInstanceIdForDriver,
   type ModelSelection,
-  ProviderDriverKind,
   type ScopedProjectRef,
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 
+import { HIDDEN_MODEL_SLUGS } from "../../glitchModelPolicy";
 import { isProviderInstancePickerReady, type ProviderInstanceEntry } from "../../providerInstances";
 
 /** Matches the public hook input shape (logic layer only needs prompt + count). */
@@ -53,6 +52,9 @@ export const MIN_SPAWN_COUNT = 1;
 export const MAX_SPAWN_COUNT = 8;
 
 export const EMPTY_PROMPT_ERROR = "Prompt must not be empty.";
+
+export const NO_READY_PROVIDER_ERROR =
+  "No ready provider is available in the target environment. Enable a provider and try again.";
 
 /**
  * Clamp spawn count into the allowed range [1, 8].
@@ -142,42 +144,121 @@ export function isModelSelectionUsableInEnvironment(
   return entry !== undefined && isProviderInstancePickerReady(entry);
 }
 
+const HIDDEN_MODEL_SLUG_SET = new Set(HIDDEN_MODEL_SLUGS);
+
+/**
+ * Default selectable models for an entry when the caller does not supply a
+ * settings-aware resolver: built-in models minus fork-hidden slugs, plus customs.
+ */
+export function defaultSelectableModelsForEntry(
+  entry: ProviderInstanceEntry,
+): ReadonlyArray<{ slug: string; isCustom: boolean }> {
+  return entry.models
+    .filter((model) => model.isCustom || !HIDDEN_MODEL_SLUG_SET.has(model.slug))
+    .map((model) => ({ slug: model.slug, isCustom: model.isCustom }));
+}
+
+/**
+ * Resolve a candidate model slug against a ready entry's selectable options.
+ * Missing/hidden slugs fall back to the entry's first non-custom option, then
+ * first option — same shape as the composer picker fallback.
+ */
+export function resolveSpawnModelForEntry(
+  entry: ProviderInstanceEntry,
+  selectedModel: string | null | undefined,
+  selectableModels?: ReadonlyArray<{ slug: string; isCustom?: boolean }> | null,
+): string | null {
+  const options =
+    selectableModels && selectableModels.length > 0
+      ? selectableModels
+      : defaultSelectableModelsForEntry(entry);
+
+  if (options.length === 0) {
+    return null;
+  }
+
+  const trimmed = typeof selectedModel === "string" ? selectedModel.trim() : "";
+  if (trimmed.length > 0 && options.some((option) => option.slug === trimmed)) {
+    return trimmed;
+  }
+
+  return (
+    options.find((option) => !option.isCustom)?.slug ??
+    options[0]?.slug ??
+    DEFAULT_MODEL_BY_PROVIDER[entry.driverKind] ??
+    DEFAULT_MODEL
+  );
+}
+
+export type ResolveSpawnModelForEntry = (
+  entry: ProviderInstanceEntry,
+  selectedModel: string | null | undefined,
+) => string | null;
+
 /**
  * Resolve model selection for a spawn batch against the *target* environment's
  * provider entries. Priority: explicit → sticky → project default → first
- * ready entry in the environment → hardcoded codex/DEFAULT_MODEL last resort.
+ * ready entry in the environment.
  *
  * Sticky/project defaults that point at a missing, disabled, or non-ready
  * instance are skipped so ProviderService.startSession does not reject the
- * whole batch.
+ * whole batch. Candidate model slugs are resolved against the target entry
+ * (hidden/absent models fall back within that instance). Returns `null` when
+ * no picker-ready provider with a selectable model exists — never hardcodes a
+ * missing Codex instance.
  */
 export function resolveSpawnModelSelection(input: {
   explicit?: ModelSelection | null | undefined;
   sticky?: ModelSelection | null | undefined;
   projectDefault?: ModelSelection | null | undefined;
   entries: ReadonlyArray<ProviderInstanceEntry>;
-}): ModelSelection {
+  /**
+   * Optional settings-aware model resolver (composer parity). When omitted,
+   * uses entry.models minus fork-hidden slugs.
+   */
+  resolveModelForEntry?: ResolveSpawnModelForEntry;
+}): ModelSelection | null {
+  const resolveModel =
+    input.resolveModelForEntry ??
+    ((entry: ProviderInstanceEntry, selectedModel: string | null | undefined) =>
+      resolveSpawnModelForEntry(entry, selectedModel));
+
+  const trySelection = (candidate: ModelSelection | null | undefined): ModelSelection | null => {
+    if (!candidate || !isModelSelectionUsableInEnvironment(candidate, input.entries)) {
+      return null;
+    }
+    const entry = input.entries.find(
+      (candidateEntry) => candidateEntry.instanceId === candidate.instanceId,
+    );
+    if (!entry) {
+      return null;
+    }
+    const model = resolveModel(entry, candidate.model);
+    if (!model) {
+      return null;
+    }
+    return createModelSelection(entry.instanceId, model, candidate.options);
+  };
+
   const candidates: Array<ModelSelection | null | undefined> = [
     input.explicit,
     input.sticky,
     input.projectDefault,
   ];
   for (const candidate of candidates) {
-    if (candidate && isModelSelectionUsableInEnvironment(candidate, input.entries)) {
-      return candidate;
+    const resolved = trySelection(candidate);
+    if (resolved) {
+      return resolved;
     }
   }
 
   const fallbackEntry = input.entries.find((entry) => isProviderInstancePickerReady(entry));
   if (fallbackEntry) {
-    const model =
-      fallbackEntry.models.find((entry) => !entry.isCustom)?.slug ??
-      fallbackEntry.models[0]?.slug ??
-      DEFAULT_MODEL_BY_PROVIDER[fallbackEntry.driverKind] ??
-      DEFAULT_MODEL;
-    return createModelSelection(fallbackEntry.instanceId, model);
+    const model = resolveModel(fallbackEntry, null);
+    if (model) {
+      return createModelSelection(fallbackEntry.instanceId, model);
+    }
   }
 
-  const codexInstanceId = defaultInstanceIdForDriver(ProviderDriverKind.make("codex"));
-  return createModelSelection(codexInstanceId, DEFAULT_MODEL);
+  return null;
 }

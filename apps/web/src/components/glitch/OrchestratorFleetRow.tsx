@@ -33,6 +33,7 @@ interface ActionFeedback {
 export function OrchestratorFleetRow({ thread }: OrchestratorFleetRowProps) {
   const [expanded, setExpanded] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState(false);
+  const [confirmDefaultBranchPr, setConfirmDefaultBranchPr] = useState(false);
   const [feedback, setFeedback] = useState<ActionFeedback | null>(null);
 
   const worktreePath = thread.worktreePath ?? "";
@@ -41,7 +42,14 @@ export function OrchestratorFleetRow({ thread }: OrchestratorFleetRowProps) {
     [thread.environmentId, thread.id],
   );
 
-  const { createPullRequest, deleteThread, isPreparingPr, isDeleting } = useWorktreeThreadActions({
+  const {
+    createPullRequest,
+    deleteThread,
+    isPreparingPr,
+    isDeleting,
+    isDefaultBranch,
+    isStatusLoading,
+  } = useWorktreeThreadActions({
     environmentId: thread.environmentId,
     threadId: thread.id,
     worktreePath,
@@ -57,13 +65,30 @@ export function OrchestratorFleetRow({ thread }: OrchestratorFleetRowProps) {
   }, []);
 
   const handleCreatePr = useCallback(async () => {
+    // Preserve GitActionsControl's default-branch gate: first click arms
+    // confirmation when the worktree is on the default ref; second click runs.
+    if (isDefaultBranch && !confirmDefaultBranchPr) {
+      setConfirmDefaultBranchPr(true);
+      setConfirmRemove(false);
+      setFeedback({
+        tone: "error",
+        message:
+          "This checkout is on the default branch. Click PR again to commit & push there, or open the thread to create a feature branch first.",
+      });
+      return;
+    }
+    setConfirmDefaultBranchPr(false);
     setFeedback(null);
-    applyResult(await createPullRequest(), "Pull request flow completed.");
-  }, [applyResult, createPullRequest]);
+    applyResult(
+      await createPullRequest({ confirmDefaultBranch: isDefaultBranch }),
+      "Pull request flow completed.",
+    );
+  }, [applyResult, confirmDefaultBranchPr, createPullRequest, isDefaultBranch]);
 
   const handleDelete = useCallback(async () => {
     if (!confirmRemove) {
       setConfirmRemove(true);
+      setConfirmDefaultBranchPr(false);
       return;
     }
     setConfirmRemove(false);
@@ -118,16 +143,19 @@ export function OrchestratorFleetRow({ thread }: OrchestratorFleetRowProps) {
         <Button
           variant="outline"
           size="sm"
-          className="h-7 gap-1 px-2 text-[11px]"
-          disabled={busy || worktreePath.length === 0}
+          className={`h-7 gap-1 px-2 text-[11px] ${
+            confirmDefaultBranchPr ? "border-destructive/60 text-destructive" : ""
+          }`}
+          disabled={busy || worktreePath.length === 0 || isStatusLoading}
           onClick={handleCreatePr}
+          onBlur={() => setConfirmDefaultBranchPr(false)}
         >
           {isPreparingPr ? (
             <Spinner className="size-3.5" />
           ) : (
             <GitPullRequestIcon className="size-3.5" />
           )}
-          PR
+          {confirmDefaultBranchPr ? "Confirm PR?" : "PR"}
         </Button>
 
         <Button

@@ -8,6 +8,8 @@ import {
   DEFAULT_RUNTIME_MODE,
   DEFAULT_SERVER_SETTINGS,
   type ScopedProjectRef,
+  type ServerProvider,
+  type ServerSettings,
 } from "@t3tools/contracts";
 import { useAtomValue } from "@effect/atom-react";
 import { useRouter } from "@tanstack/react-router";
@@ -26,9 +28,13 @@ import {
   getProjectOrderKey,
   selectProjectGroupingSettings,
 } from "../../logicalProject";
-import { deriveProviderInstanceEntries } from "../../providerInstances";
+import {
+  applyProviderInstanceSettings,
+  deriveProviderInstanceEntries,
+  type ProviderInstanceEntry,
+} from "../../providerInstances";
 import { readThreadShell, useProjects, useServerConfigs } from "../../state/entities";
-import { primaryServerProvidersAtom } from "../../state/server";
+import { primaryServerProvidersAtom, primaryServerSettingsAtom } from "../../state/server";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../../uiStateStore";
 import { useClientSettings } from "../../hooks/useSettings";
 import {
@@ -37,6 +43,20 @@ import {
   normalizeDelegateToCodexInput,
   resolveCodexInstance,
 } from "./delegateToCodex.logic";
+
+/** Match the composer: overlay settings so a just-disabled/deleted instance is not selected. */
+function resolveEnvironmentProviderEntries(
+  providers: ReadonlyArray<ServerProvider> | undefined,
+  settings: ServerSettings | undefined,
+): ReadonlyArray<ProviderInstanceEntry> | null {
+  if (!providers) {
+    return null;
+  }
+  return applyProviderInstanceSettings(
+    deriveProviderInstanceEntries(providers),
+    settings ?? DEFAULT_SERVER_SETTINGS,
+  );
+}
 
 export interface DelegateToCodexInput {
   /** Text to prefill in the new draft (may be empty string). */
@@ -59,6 +79,7 @@ export function useDelegateToCodex(
   isCodexAvailable: boolean;
 } {
   const providers = useAtomValue(primaryServerProvidersAtom);
+  const primarySettings = useAtomValue(primaryServerSettingsAtom);
   const projects = useProjects();
   const serverConfigs = useServerConfigs();
   const projectOrder = useUiStateStore((store) => store.projectOrder);
@@ -67,20 +88,27 @@ export function useDelegateToCodex(
 
   // Primary entries only when no target project is in scope (e.g. empty shell).
   // Never cross-route a target project's draft through primary providers.
+  // Overlay settings so a just-disabled/deleted Codex instance is not treated as ready.
   const primaryProviderEntries = useMemo(
-    () => deriveProviderInstanceEntries(providers),
-    [providers],
+    () =>
+      resolveEnvironmentProviderEntries(providers, primarySettings ?? DEFAULT_SERVER_SETTINGS) ??
+      [],
+    [primarySettings, providers],
   );
 
   const isCodexAvailable = useMemo(() => {
     if (targetProjectRef) {
-      const targetProviders = serverConfigs.get(targetProjectRef.environmentId)?.providers;
+      const targetConfig = serverConfigs.get(targetProjectRef.environmentId);
       // Config not loaded yet (reconnect, cached remote) — do not claim available
       // via the primary environment's Codex instance.
-      if (!targetProviders) {
+      const entries = resolveEnvironmentProviderEntries(
+        targetConfig?.providers,
+        targetConfig?.settings,
+      );
+      if (!entries) {
         return false;
       }
-      return isCodexAvailableFromEntries(deriveProviderInstanceEntries(targetProviders));
+      return isCodexAvailableFromEntries(entries);
     }
     return isCodexAvailableFromEntries(primaryProviderEntries);
   }, [primaryProviderEntries, serverConfigs, targetProjectRef]);
@@ -112,16 +140,21 @@ export function useDelegateToCodex(
 
         // Resolve Codex only from the TARGET environment's providers. Cross-routing
         // a primary Codex instance into another environment writes an instance id
-        // that does not exist there (or is a different account).
-        const targetProviders = serverConfigs.get(projectRef.environmentId)?.providers;
-        if (!targetProviders) {
+        // that does not exist there (or is a different account). Overlay settings
+        // so a just-disabled/deleted instance is not written onto the draft.
+        const targetConfig = serverConfigs.get(projectRef.environmentId);
+        const targetEntries = resolveEnvironmentProviderEntries(
+          targetConfig?.providers,
+          targetConfig?.settings,
+        );
+        if (!targetEntries) {
           return {
             ok: false,
             error:
               "Provider configuration for the target environment is not loaded yet. Try again once the environment reconnects.",
           };
         }
-        const codexEntry = resolveCodexInstance(deriveProviderInstanceEntries(targetProviders));
+        const codexEntry = resolveCodexInstance(targetEntries);
         if (!codexEntry) {
           return {
             ok: false,
@@ -137,8 +170,7 @@ export function useDelegateToCodex(
             candidate.id === projectRef.projectId &&
             candidate.environmentId === projectRef.environmentId,
         );
-        const environmentSettings =
-          serverConfigs.get(projectRef.environmentId)?.settings ?? DEFAULT_SERVER_SETTINGS;
+        const environmentSettings = targetConfig?.settings ?? DEFAULT_SERVER_SETTINGS;
         const logicalProjectKey = project
           ? deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings)
           : scopedProjectKey(projectRef);

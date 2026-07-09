@@ -4,9 +4,12 @@ import { squashAtomCommandFailure } from "@t3tools/client-runtime/state/runtime"
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { useCallback, useMemo, useState } from "react";
 
+import { requiresDefaultBranchConfirmation } from "../GitActionsControl.logic";
 import { randomHex } from "../../lib/utils";
 import { useThreadActions } from "../../hooks/useThreadActions";
+import { useEnvironmentQuery } from "../../state/query";
 import { useGitStackedAction } from "../../state/sourceControlActions";
+import { vcsEnvironment } from "../../state/vcs";
 import { formatUnknownError } from "./spawnWorktreeAgents.logic";
 
 export interface WorktreeThreadActionsInput {
@@ -21,6 +24,21 @@ export interface WorktreeThreadActionsInput {
 export interface WorktreeThreadActionsResult {
   ok: boolean;
   error?: string;
+  /**
+   * Set when the worktree is on the repository default branch and the caller
+   * has not yet confirmed. Matches GitActionsControl's default-branch gate —
+   * the UI should re-prompt and call again with `confirmDefaultBranch: true`.
+   */
+  needsDefaultBranchConfirmation?: boolean;
+}
+
+export interface CreatePullRequestOptions {
+  /**
+   * Required when the worktree checkout is the repository default branch.
+   * Without it, the action returns `needsDefaultBranchConfirmation` instead of
+   * committing/pushing to the default ref.
+   */
+  confirmDefaultBranch?: boolean;
 }
 
 /**
@@ -35,10 +53,18 @@ export interface WorktreeThreadActionsResult {
  * Both never reject; failures come back on the returned result.
  */
 export function useWorktreeThreadActions(input: WorktreeThreadActionsInput): {
-  createPullRequest: () => Promise<WorktreeThreadActionsResult>;
+  createPullRequest: (options?: CreatePullRequestOptions) => Promise<WorktreeThreadActionsResult>;
   deleteThread: () => Promise<WorktreeThreadActionsResult>;
   isPreparingPr: boolean;
   isDeleting: boolean;
+  /**
+   * True when VCS status reports the worktree is on the default branch.
+   * Callers should gate the PR button through a confirmation step (same
+   * contract as GitActionsControl's `requiresDefaultBranchConfirmation`).
+   */
+  isDefaultBranch: boolean;
+  /** True while VCS status for the worktree is still loading. */
+  isStatusLoading: boolean;
 } {
   const { environmentId, threadId, worktreePath, title } = input;
 
@@ -48,30 +74,59 @@ export function useWorktreeThreadActions(input: WorktreeThreadActionsInput): {
   );
   const stackedAction = useGitStackedAction(prScope);
 
+  const gitStatus = useEnvironmentQuery(
+    worktreePath.length > 0
+      ? vcsEnvironment.status({
+          environmentId,
+          input: { cwd: worktreePath },
+        })
+      : null,
+  );
+  const isDefaultBranch = gitStatus.data?.isDefaultRef === true;
+  const isStatusLoading = worktreePath.length > 0 && gitStatus.isPending;
+
   const { deleteThread: deleteThreadAction } = useThreadActions();
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const createPullRequest = useCallback(async (): Promise<WorktreeThreadActionsResult> => {
-    try {
-      const result = await stackedAction.run({
-        actionId: `glitch-pr-${randomHex(8)}`,
-        action: "commit_push_pr",
-        ...(title.trim().length > 0 ? { commitMessage: title.trim() } : {}),
-      });
-      if (result._tag === "Failure") {
-        return {
-          ok: false,
-          error: formatUnknownError(
-            squashAtomCommandFailure(result),
-            "Failed to create pull request.",
-          ),
-        };
+  const createPullRequest = useCallback(
+    async (options?: CreatePullRequestOptions): Promise<WorktreeThreadActionsResult> => {
+      try {
+        // Mirror GitActionsControl: never run commit_push_pr on the default
+        // branch without an explicit confirmation step. Orchestrator lists any
+        // thread with a worktreePath, not only temporary feature branches.
+        if (
+          requiresDefaultBranchConfirmation("commit_push_pr", isDefaultBranch) &&
+          options?.confirmDefaultBranch !== true
+        ) {
+          const branchName = gitStatus.data?.refName?.trim() || "the default branch";
+          return {
+            ok: false,
+            needsDefaultBranchConfirmation: true,
+            error: `This worktree is on ${branchName}. Confirm to commit and push there, or open the thread and create a feature branch first.`,
+          };
+        }
+
+        const result = await stackedAction.run({
+          actionId: `glitch-pr-${randomHex(8)}`,
+          action: "commit_push_pr",
+          ...(title.trim().length > 0 ? { commitMessage: title.trim() } : {}),
+        });
+        if (result._tag === "Failure") {
+          return {
+            ok: false,
+            error: formatUnknownError(
+              squashAtomCommandFailure(result),
+              "Failed to create pull request.",
+            ),
+          };
+        }
+        return { ok: true };
+      } catch (error) {
+        return { ok: false, error: formatUnknownError(error, "Failed to create pull request.") };
       }
-      return { ok: true };
-    } catch (error) {
-      return { ok: false, error: formatUnknownError(error, "Failed to create pull request.") };
-    }
-  }, [stackedAction, title]);
+    },
+    [gitStatus.data?.refName, isDefaultBranch, stackedAction, title],
+  );
 
   const deleteThread = useCallback(async (): Promise<WorktreeThreadActionsResult> => {
     if (isDeleting) {
@@ -99,5 +154,7 @@ export function useWorktreeThreadActions(input: WorktreeThreadActionsInput): {
     deleteThread,
     isPreparingPr: stackedAction.isPending,
     isDeleting,
+    isDefaultBranch,
+    isStatusLoading,
   };
 }

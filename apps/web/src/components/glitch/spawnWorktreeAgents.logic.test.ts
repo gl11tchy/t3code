@@ -1,6 +1,5 @@
 // GLITCHY (gl11tchy): fork-owned orchestration layer — unit tests for spawn-plan pure logic
 import {
-  DEFAULT_MODEL,
   EnvironmentId,
   ProjectId,
   ProviderDriverKind,
@@ -21,6 +20,7 @@ import {
   makeUniformFailedOutcomes,
   MAX_SPAWN_COUNT,
   MIN_SPAWN_COUNT,
+  resolveSpawnModelForEntry,
   resolveSpawnModelSelection,
   summarizeOutcomes,
   type SpawnAgentOutcome,
@@ -305,12 +305,65 @@ describe("isModelSelectionUsableInEnvironment / resolveSpawnModelSelection", () 
     );
   });
 
-  it("uses the hardcoded codex default when no environment entries are usable", () => {
+  it("returns null when no environment entries are usable (no hardcoded Codex fallback)", () => {
     const empty = deriveProviderInstanceEntries([
       provider({ provider: claude, instanceId: "claudeAgent", enabled: false }),
     ]);
-    expect(resolveSpawnModelSelection({ entries: empty })).toEqual(
-      createModelSelection(ProviderInstanceId.make("codex"), DEFAULT_MODEL),
+    expect(resolveSpawnModelSelection({ entries: empty })).toBeNull();
+  });
+
+  it("rewrites a sticky model that is hidden by fork policy to a selectable model", () => {
+    const withHaiku = deriveProviderInstanceEntries([
+      provider({
+        provider: claude,
+        instanceId: "claudeAgent",
+        models: [
+          { slug: "claude-haiku-4-5" },
+          { slug: "claude-fable-5" },
+          { slug: "claude-opus-4-6" },
+        ],
+      }),
+    ]);
+    const sticky = createModelSelection(ProviderInstanceId.make("claudeAgent"), "claude-haiku-4-5");
+    expect(resolveSpawnModelSelection({ sticky, entries: withHaiku })).toEqual(
+      createModelSelection(ProviderInstanceId.make("claudeAgent"), "claude-fable-5"),
     );
+  });
+
+  it("rewrites a sticky model absent from the provider list to the entry default", () => {
+    const sticky = createModelSelection(ProviderInstanceId.make("codex"), "stale-model-slug");
+    expect(resolveSpawnModelSelection({ sticky, entries })).toEqual(
+      createModelSelection(ProviderInstanceId.make("codex"), "gpt-5.4"),
+    );
+  });
+
+  it("uses a settings-aware resolveModelForEntry when provided", () => {
+    const sticky = createModelSelection(ProviderInstanceId.make("codex"), "gpt-5.4");
+    expect(
+      resolveSpawnModelSelection({
+        sticky,
+        entries,
+        resolveModelForEntry: () => "resolved-from-settings",
+      }),
+    ).toEqual(createModelSelection(ProviderInstanceId.make("codex"), "resolved-from-settings"));
+  });
+});
+
+describe("resolveSpawnModelForEntry", () => {
+  it("keeps a selectable model and falls back when hidden or missing", () => {
+    const [entry] = deriveProviderInstanceEntries([
+      provider({
+        provider: claude,
+        instanceId: "claudeAgent",
+        models: [{ slug: "claude-haiku-4-5" }, { slug: "claude-fable-5" }],
+      }),
+    ]);
+    expect(entry).toBeDefined();
+    if (!entry) return;
+
+    expect(resolveSpawnModelForEntry(entry, "claude-fable-5")).toBe("claude-fable-5");
+    expect(resolveSpawnModelForEntry(entry, "claude-haiku-4-5")).toBe("claude-fable-5");
+    expect(resolveSpawnModelForEntry(entry, "missing")).toBe("claude-fable-5");
+    expect(resolveSpawnModelForEntry(entry, null)).toBe("claude-fable-5");
   });
 });

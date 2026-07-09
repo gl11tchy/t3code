@@ -3,21 +3,25 @@ import {
   DEFAULT_SERVER_SETTINGS,
   type ModelSelection,
   type ScopedProjectRef,
+  type ServerSettings,
 } from "@t3tools/contracts";
 import {
   squashAtomCommandFailure,
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
 import { buildTemporaryWorktreeBranchName } from "@t3tools/shared/git";
-import { createModelSelection } from "@t3tools/shared/model";
+import { createModelSelection, resolveSelectableModel } from "@t3tools/shared/model";
 import { truncate } from "@t3tools/shared/String";
 import { useCallback, useRef, useState } from "react";
 
 import { useComposerDraftStore } from "../../composerDraftStore";
+import { getClientSettings, mergeEnvironmentSettings } from "../../hooks/useSettings";
 import { newMessageId, newThreadId, randomHex } from "../../lib/utils";
+import { getAppModelOptionsForInstance } from "../../modelSelection";
 import {
   applyProviderInstanceSettings,
   deriveProviderInstanceEntries,
+  type ProviderInstanceEntry,
 } from "../../providerInstances";
 import { readProject, useServerConfigs } from "../../state/entities";
 import { threadEnvironment } from "../../state/threads";
@@ -28,6 +32,7 @@ import {
   buildSpawnPlan,
   formatUnknownError,
   makeUniformFailedOutcomes,
+  NO_READY_PROVIDER_ERROR,
   resolveSpawnModelSelection,
   summarizeOutcomes,
   type SpawnAgentOutcome,
@@ -41,9 +46,10 @@ export interface SpawnWorktreeAgentsInput {
   count: number;
   /**
    * When omitted: sticky selection for the active provider, else project
-   * default, else first usable provider in the target environment, else
-   * codex/DEFAULT_MODEL. Sticky/project defaults are validated against the
-   * selected environment's provider entries before use.
+   * default, else first usable provider in the target environment. Sticky/
+   * project defaults are validated against the selected environment's
+   * provider entries (ready + selectable model) before use. Fails the batch
+   * when no ready provider exists — never hardcodes a missing Codex instance.
    */
   modelSelection?: ModelSelection;
   /**
@@ -98,7 +104,8 @@ export function useSpawnWorktreeAgents(): {
 
         // Match the model picker: overlay settings onto streamed provider
         // snapshots so a just-disabled/deleted instance is not still selected
-        // from a stale enabled probe, then only accept ready instances.
+        // from a stale enabled probe, then only accept ready instances with a
+        // selectable model (hidden/absent slugs rewritten within the instance).
         const serverConfig = serverConfigs.get(input.projectRef.environmentId);
         const environmentSettings = serverConfig?.settings ?? DEFAULT_SERVER_SETTINGS;
         const environmentEntries = applyProviderInstanceSettings(
@@ -109,7 +116,11 @@ export function useSpawnWorktreeAgents(): {
           input.modelSelection,
           project.defaultModelSelection,
           environmentEntries,
+          environmentSettings,
         );
+        if (!modelSelection) {
+          return failAll(NO_READY_PROVIDER_ERROR);
+        }
         const titleSeed = truncate(plan.prompt);
 
         let baseBranch = input.baseBranch?.trim() || null;
@@ -228,18 +239,32 @@ export function useSpawnWorktreeAgents(): {
 function resolveModelSelection(
   explicit: ModelSelection | undefined,
   projectDefault: ModelSelection | null | undefined,
-  entries: ReturnType<typeof deriveProviderInstanceEntries>,
-): ModelSelection {
+  entries: ReadonlyArray<ProviderInstanceEntry>,
+  environmentSettings: ServerSettings,
+): ModelSelection | null {
   const store = useComposerDraftStore.getState();
   const stickyActive = store.stickyActiveProvider;
   const sticky =
     stickyActive !== null ? (store.stickyModelSelectionByProvider[stickyActive] ?? null) : null;
+
+  // Composer parity: merge client preferences so fork-hidden and user-hidden
+  // models are not dispatched even when sticky state still points at them.
+  const unifiedSettings = mergeEnvironmentSettings(environmentSettings, getClientSettings());
 
   return resolveSpawnModelSelection({
     explicit,
     sticky,
     projectDefault,
     entries,
+    resolveModelForEntry: (entry, selectedModel) => {
+      const options = getAppModelOptionsForInstance(unifiedSettings, entry);
+      return (
+        resolveSelectableModel(entry.driverKind, selectedModel, options) ??
+        options.find((option) => !option.isCustom)?.slug ??
+        options[0]?.slug ??
+        null
+      );
+    },
   });
 }
 
