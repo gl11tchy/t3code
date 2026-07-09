@@ -156,8 +156,11 @@ export function useDelegateToCodex(
         if (reusableStoredDraftThread) {
           // Always apply the normalized envMode (defaults to "local") so a
           // pre-existing worktree draft is not reused with the wrong mode.
+          // When going local, also clear stale worktreePath/branch — ChatView
+          // otherwise boots createThread with the old worktree checkout.
           setDraftThreadContext(reusableStoredDraftThread.draftId, {
             envMode: initialEnvMode,
+            ...(initialEnvMode === "local" ? { worktreePath: null, branch: null } : {}),
           });
           setLogicalProjectDraftThreadId(
             logicalProjectKey,

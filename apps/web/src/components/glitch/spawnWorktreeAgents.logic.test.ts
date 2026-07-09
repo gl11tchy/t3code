@@ -1,16 +1,27 @@
 // GLITCHY (gl11tchy): fork-owned orchestration layer — unit tests for spawn-plan pure logic
-import { EnvironmentId, ProjectId } from "@t3tools/contracts";
+import {
+  DEFAULT_MODEL,
+  EnvironmentId,
+  ProjectId,
+  ProviderDriverKind,
+  ProviderInstanceId,
+  type ServerProvider,
+} from "@t3tools/contracts";
 import { scopeProjectRef } from "@t3tools/client-runtime/environment";
+import { createModelSelection } from "@t3tools/shared/model";
 import { describe, expect, it } from "vite-plus/test";
 
+import { deriveProviderInstanceEntries } from "../../providerInstances";
 import {
   buildSpawnPlan,
   clampSpawnCount,
   EMPTY_PROMPT_ERROR,
   formatUnknownError,
+  isModelSelectionUsableInEnvironment,
   makeUniformFailedOutcomes,
   MAX_SPAWN_COUNT,
   MIN_SPAWN_COUNT,
+  resolveSpawnModelSelection,
   summarizeOutcomes,
   type SpawnAgentOutcome,
 } from "./spawnWorktreeAgents.logic";
@@ -143,5 +154,123 @@ describe("formatUnknownError", () => {
     expect(formatUnknownError(new Error("real"), "fallback")).toBe("real");
     expect(formatUnknownError("stringy", "fallback")).toBe("stringy");
     expect(formatUnknownError({ weird: true }, "fallback")).toBe("fallback");
+  });
+});
+
+function provider(input: {
+  provider: ProviderDriverKind;
+  instanceId: string;
+  enabled?: boolean;
+  availability?: ServerProvider["availability"];
+  models?: ReadonlyArray<{ slug: string; isCustom?: boolean }>;
+}): ServerProvider {
+  return {
+    instanceId: ProviderInstanceId.make(input.instanceId),
+    driver: input.provider,
+    enabled: input.enabled ?? true,
+    installed: true,
+    version: null,
+    status: "ready",
+    ...(input.availability ? { availability: input.availability } : {}),
+    auth: { status: "authenticated" },
+    checkedAt: "2026-01-01T00:00:00.000Z",
+    models: (input.models ?? [{ slug: "gpt-5.4" }]).map((model) => ({
+      slug: model.slug,
+      name: model.slug,
+      isCustom: model.isCustom ?? false,
+      capabilities: {},
+    })),
+    slashCommands: [],
+    skills: [],
+  };
+}
+
+const codex = ProviderDriverKind.make("codex");
+const claude = ProviderDriverKind.make("claudeAgent");
+
+describe("isModelSelectionUsableInEnvironment / resolveSpawnModelSelection", () => {
+  const entries = deriveProviderInstanceEntries([
+    provider({
+      provider: codex,
+      instanceId: "codex",
+      models: [{ slug: "gpt-5.4" }],
+    }),
+    provider({
+      provider: claude,
+      instanceId: "claudeAgent",
+      enabled: false,
+      models: [{ slug: "claude-fable-5" }],
+    }),
+    provider({
+      provider: ProviderDriverKind.make("codex"),
+      instanceId: "codex_other_env",
+      availability: "unavailable",
+      models: [{ slug: "gpt-other" }],
+    }),
+  ]);
+
+  it("rejects disabled or missing instances", () => {
+    expect(
+      isModelSelectionUsableInEnvironment(
+        createModelSelection(ProviderInstanceId.make("claudeAgent"), "claude-fable-5"),
+        entries,
+      ),
+    ).toBe(false);
+    expect(
+      isModelSelectionUsableInEnvironment(
+        createModelSelection(ProviderInstanceId.make("missing"), "gpt-5.4"),
+        entries,
+      ),
+    ).toBe(false);
+    expect(
+      isModelSelectionUsableInEnvironment(
+        createModelSelection(ProviderInstanceId.make("codex"), "gpt-5.4"),
+        entries,
+      ),
+    ).toBe(true);
+  });
+
+  it("skips stale sticky selection and uses the project default when usable", () => {
+    const sticky = createModelSelection(ProviderInstanceId.make("claudeAgent"), "claude-fable-5");
+    const projectDefault = createModelSelection(ProviderInstanceId.make("codex"), "gpt-5.4");
+    expect(
+      resolveSpawnModelSelection({
+        sticky,
+        projectDefault,
+        entries,
+      }),
+    ).toEqual(projectDefault);
+  });
+
+  it("falls back to the first usable environment entry when sticky and default are stale", () => {
+    const sticky = createModelSelection(ProviderInstanceId.make("missing"), "x");
+    const projectDefault = createModelSelection(ProviderInstanceId.make("claudeAgent"), "y");
+    expect(
+      resolveSpawnModelSelection({
+        sticky,
+        projectDefault,
+        entries,
+      }),
+    ).toEqual(createModelSelection(ProviderInstanceId.make("codex"), "gpt-5.4"));
+  });
+
+  it("prefers an explicit selection only when it is usable in the environment", () => {
+    const explicit = createModelSelection(ProviderInstanceId.make("codex"), "gpt-5.4");
+    const sticky = createModelSelection(ProviderInstanceId.make("claudeAgent"), "claude-fable-5");
+    expect(resolveSpawnModelSelection({ explicit, sticky, entries })).toEqual(explicit);
+
+    const staleExplicit = createModelSelection(ProviderInstanceId.make("missing"), "nope");
+    expect(resolveSpawnModelSelection({ explicit: staleExplicit, sticky, entries })).toEqual(
+      createModelSelection(ProviderInstanceId.make("codex"), "gpt-5.4"),
+    );
+  });
+
+  it("uses the hardcoded codex default when no environment entries are usable", () => {
+    const empty = deriveProviderInstanceEntries([
+      provider({ provider: claude, instanceId: "claudeAgent", enabled: false }),
+    ]);
+    expect(resolveSpawnModelSelection({ entries: empty })).toEqual(
+      createModelSelection(ProviderInstanceId.make("codex"), DEFAULT_MODEL),
+    );
   });
 });

@@ -1,5 +1,15 @@
 // GLITCHY (gl11tchy): fork-owned orchestration layer — pure spawn-plan validation & outcome aggregation
-import type { ModelSelection, ScopedProjectRef } from "@t3tools/contracts";
+import {
+  DEFAULT_MODEL,
+  DEFAULT_MODEL_BY_PROVIDER,
+  defaultInstanceIdForDriver,
+  type ModelSelection,
+  ProviderDriverKind,
+  type ScopedProjectRef,
+} from "@t3tools/contracts";
+import { createModelSelection } from "@t3tools/shared/model";
+
+import type { ProviderInstanceEntry } from "../../providerInstances";
 
 /** Matches the public hook input shape (logic layer only needs prompt + count). */
 export interface SpawnWorktreeAgentsPlanInput {
@@ -116,4 +126,56 @@ export function formatUnknownError(error: unknown, fallback: string): string {
     return error;
   }
   return fallback;
+}
+
+/**
+ * True when the selection's provider instance exists in the target environment
+ * and can accept a session (enabled + available). Stale sticky selections from
+ * another environment or a now-disabled instance must not be used for spawn.
+ */
+export function isModelSelectionUsableInEnvironment(
+  selection: ModelSelection,
+  entries: ReadonlyArray<ProviderInstanceEntry>,
+): boolean {
+  const entry = entries.find((candidate) => candidate.instanceId === selection.instanceId);
+  return entry !== undefined && entry.enabled && entry.isAvailable;
+}
+
+/**
+ * Resolve model selection for a spawn batch against the *target* environment's
+ * provider entries. Priority: explicit → sticky → project default → first
+ * usable entry in the environment → hardcoded codex/DEFAULT_MODEL last resort.
+ *
+ * Sticky/project defaults that point at a missing or disabled instance are
+ * skipped so ProviderService.startSession does not reject the whole batch.
+ */
+export function resolveSpawnModelSelection(input: {
+  explicit?: ModelSelection | null | undefined;
+  sticky?: ModelSelection | null | undefined;
+  projectDefault?: ModelSelection | null | undefined;
+  entries: ReadonlyArray<ProviderInstanceEntry>;
+}): ModelSelection {
+  const candidates: Array<ModelSelection | null | undefined> = [
+    input.explicit,
+    input.sticky,
+    input.projectDefault,
+  ];
+  for (const candidate of candidates) {
+    if (candidate && isModelSelectionUsableInEnvironment(candidate, input.entries)) {
+      return candidate;
+    }
+  }
+
+  const fallbackEntry = input.entries.find((entry) => entry.enabled && entry.isAvailable);
+  if (fallbackEntry) {
+    const model =
+      fallbackEntry.models.find((entry) => !entry.isCustom)?.slug ??
+      fallbackEntry.models[0]?.slug ??
+      DEFAULT_MODEL_BY_PROVIDER[fallbackEntry.driverKind] ??
+      DEFAULT_MODEL;
+    return createModelSelection(fallbackEntry.instanceId, model);
+  }
+
+  const codexInstanceId = defaultInstanceIdForDriver(ProviderDriverKind.make("codex"));
+  return createModelSelection(codexInstanceId, DEFAULT_MODEL);
 }

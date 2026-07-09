@@ -1,10 +1,7 @@
 // GLITCHY (gl11tchy): fork-owned orchestration layer — sequential worktree-backed multi-agent spawn
 import {
-  DEFAULT_MODEL,
   DEFAULT_SERVER_SETTINGS,
-  defaultInstanceIdForDriver,
   type ModelSelection,
-  ProviderDriverKind,
   type ScopedProjectRef,
 } from "@t3tools/contracts";
 import {
@@ -18,6 +15,7 @@ import { useCallback, useRef, useState } from "react";
 
 import { useComposerDraftStore } from "../../composerDraftStore";
 import { newMessageId, newThreadId, randomHex } from "../../lib/utils";
+import { deriveProviderInstanceEntries } from "../../providerInstances";
 import { readProject, useServerConfigs } from "../../state/entities";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -27,6 +25,7 @@ import {
   buildSpawnPlan,
   formatUnknownError,
   makeUniformFailedOutcomes,
+  resolveSpawnModelSelection,
   summarizeOutcomes,
   type SpawnAgentOutcome,
   type SpawnWorktreeAgentsResult,
@@ -39,7 +38,9 @@ export interface SpawnWorktreeAgentsInput {
   count: number;
   /**
    * When omitted: sticky selection for the active provider, else project
-   * default, else codex/DEFAULT_MODEL.
+   * default, else first usable provider in the target environment, else
+   * codex/DEFAULT_MODEL. Sticky/project defaults are validated against the
+   * selected environment's provider entries before use.
    */
   modelSelection?: ModelSelection;
   /**
@@ -92,9 +93,12 @@ export function useSpawnWorktreeAgents(): {
           return failAll("Project not found for the given projectRef.");
         }
 
+        const environmentProviders =
+          serverConfigs.get(input.projectRef.environmentId)?.providers ?? [];
         const modelSelection = resolveModelSelection(
           input.modelSelection,
           project.defaultModelSelection,
+          deriveProviderInstanceEntries(environmentProviders),
         );
         const titleSeed = truncate(plan.prompt);
 
@@ -216,26 +220,19 @@ export function useSpawnWorktreeAgents(): {
 function resolveModelSelection(
   explicit: ModelSelection | undefined,
   projectDefault: ModelSelection | null | undefined,
+  entries: ReturnType<typeof deriveProviderInstanceEntries>,
 ): ModelSelection {
-  if (explicit) {
-    return explicit;
-  }
-
   const store = useComposerDraftStore.getState();
   const stickyActive = store.stickyActiveProvider;
-  if (stickyActive) {
-    const sticky = store.stickyModelSelectionByProvider[stickyActive];
-    if (sticky) {
-      return sticky;
-    }
-  }
+  const sticky =
+    stickyActive !== null ? (store.stickyModelSelectionByProvider[stickyActive] ?? null) : null;
 
-  if (projectDefault) {
-    return projectDefault;
-  }
-
-  const codexInstanceId = defaultInstanceIdForDriver(ProviderDriverKind.make("codex"));
-  return createModelSelection(codexInstanceId, DEFAULT_MODEL);
+  return resolveSpawnModelSelection({
+    explicit,
+    sticky,
+    projectDefault,
+    entries,
+  });
 }
 
 async function resolveProjectCurrentBranch(input: {
