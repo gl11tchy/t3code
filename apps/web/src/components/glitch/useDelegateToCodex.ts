@@ -65,16 +65,25 @@ export function useDelegateToCodex(
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const router = useRouter();
 
-  const providerEntries = useMemo(() => deriveProviderInstanceEntries(providers), [providers]);
+  // Primary entries only when no target project is in scope (e.g. empty shell).
+  // Never cross-route a target project's draft through primary providers.
+  const primaryProviderEntries = useMemo(
+    () => deriveProviderInstanceEntries(providers),
+    [providers],
+  );
 
   const isCodexAvailable = useMemo(() => {
-    const targetProviders = targetProjectRef
-      ? serverConfigs.get(targetProjectRef.environmentId)?.providers
-      : undefined;
-    return isCodexAvailableFromEntries(
-      targetProviders ? deriveProviderInstanceEntries(targetProviders) : providerEntries,
-    );
-  }, [providerEntries, serverConfigs, targetProjectRef]);
+    if (targetProjectRef) {
+      const targetProviders = serverConfigs.get(targetProjectRef.environmentId)?.providers;
+      // Config not loaded yet (reconnect, cached remote) — do not claim available
+      // via the primary environment's Codex instance.
+      if (!targetProviders) {
+        return false;
+      }
+      return isCodexAvailableFromEntries(deriveProviderInstanceEntries(targetProviders));
+    }
+    return isCodexAvailableFromEntries(primaryProviderEntries);
+  }, [primaryProviderEntries, serverConfigs, targetProjectRef]);
 
   const defaultProjectRef = useMemo((): ScopedProjectRef | null => {
     const orderedProjects = orderItemsByPreferredIds({
@@ -101,17 +110,22 @@ export function useDelegateToCodex(
           };
         }
 
-        // Resolve Codex from the TARGET environment's providers (multi-environment
-        // correctness); fall back to the primary server's entries when the target
-        // environment has no config loaded yet.
+        // Resolve Codex only from the TARGET environment's providers. Cross-routing
+        // a primary Codex instance into another environment writes an instance id
+        // that does not exist there (or is a different account).
         const targetProviders = serverConfigs.get(projectRef.environmentId)?.providers;
-        const codexEntry = resolveCodexInstance(
-          targetProviders ? deriveProviderInstanceEntries(targetProviders) : providerEntries,
-        );
+        if (!targetProviders) {
+          return {
+            ok: false,
+            error:
+              "Provider configuration for the target environment is not loaded yet. Try again once the environment reconnects.",
+          };
+        }
+        const codexEntry = resolveCodexInstance(deriveProviderInstanceEntries(targetProviders));
         if (!codexEntry) {
           return {
             ok: false,
-            error: "No enabled and available Codex provider instance found.",
+            error: "No ready Codex provider instance found in the target environment.",
           };
         }
 
@@ -221,7 +235,7 @@ export function useDelegateToCodex(
         return { ok: false, error: message };
       }
     },
-    [defaultProjectRef, projectGroupingSettings, projects, providerEntries, router, serverConfigs],
+    [defaultProjectRef, projectGroupingSettings, projects, router, serverConfigs],
   );
 
   return { delegateToCodex, isCodexAvailable };

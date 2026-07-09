@@ -9,7 +9,7 @@ import {
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 
-import type { ProviderInstanceEntry } from "../../providerInstances";
+import { isProviderInstancePickerReady, type ProviderInstanceEntry } from "../../providerInstances";
 
 /** Matches the public hook input shape (logic layer only needs prompt + count). */
 export interface SpawnWorktreeAgentsPlanInput {
@@ -130,24 +130,26 @@ export function formatUnknownError(error: unknown, fallback: string): string {
 
 /**
  * True when the selection's provider instance exists in the target environment
- * and can accept a session (enabled + available). Stale sticky selections from
- * another environment or a now-disabled instance must not be used for spawn.
+ * and can accept a session — same bar as the model picker (enabled + available
+ * + probe status "ready"). Stale sticky selections from another environment, a
+ * disabled instance, or a failed/checking probe must not be used for spawn.
  */
 export function isModelSelectionUsableInEnvironment(
   selection: ModelSelection,
   entries: ReadonlyArray<ProviderInstanceEntry>,
 ): boolean {
   const entry = entries.find((candidate) => candidate.instanceId === selection.instanceId);
-  return entry !== undefined && entry.enabled && entry.isAvailable;
+  return entry !== undefined && isProviderInstancePickerReady(entry);
 }
 
 /**
  * Resolve model selection for a spawn batch against the *target* environment's
  * provider entries. Priority: explicit → sticky → project default → first
- * usable entry in the environment → hardcoded codex/DEFAULT_MODEL last resort.
+ * ready entry in the environment → hardcoded codex/DEFAULT_MODEL last resort.
  *
- * Sticky/project defaults that point at a missing or disabled instance are
- * skipped so ProviderService.startSession does not reject the whole batch.
+ * Sticky/project defaults that point at a missing, disabled, or non-ready
+ * instance are skipped so ProviderService.startSession does not reject the
+ * whole batch.
  */
 export function resolveSpawnModelSelection(input: {
   explicit?: ModelSelection | null | undefined;
@@ -166,7 +168,7 @@ export function resolveSpawnModelSelection(input: {
     }
   }
 
-  const fallbackEntry = input.entries.find((entry) => entry.enabled && entry.isAvailable);
+  const fallbackEntry = input.entries.find((entry) => isProviderInstancePickerReady(entry));
   if (fallbackEntry) {
     const model =
       fallbackEntry.models.find((entry) => !entry.isCustom)?.slug ??

@@ -162,6 +162,7 @@ function provider(input: {
   instanceId: string;
   enabled?: boolean;
   availability?: ServerProvider["availability"];
+  status?: ServerProvider["status"];
   models?: ReadonlyArray<{ slug: string; isCustom?: boolean }>;
 }): ServerProvider {
   return {
@@ -170,7 +171,7 @@ function provider(input: {
     enabled: input.enabled ?? true,
     installed: true,
     version: null,
-    status: "ready",
+    status: input.status ?? "ready",
     ...(input.availability ? { availability: input.availability } : {}),
     auth: { status: "authenticated" },
     checkedAt: "2026-01-01T00:00:00.000Z",
@@ -209,7 +210,7 @@ describe("isModelSelectionUsableInEnvironment / resolveSpawnModelSelection", () 
     }),
   ]);
 
-  it("rejects disabled or missing instances", () => {
+  it("rejects disabled, missing, or non-ready instances", () => {
     expect(
       isModelSelectionUsableInEnvironment(
         createModelSelection(ProviderInstanceId.make("claudeAgent"), "claude-fable-5"),
@@ -228,6 +229,45 @@ describe("isModelSelectionUsableInEnvironment / resolveSpawnModelSelection", () 
         entries,
       ),
     ).toBe(true);
+
+    const errored = deriveProviderInstanceEntries([
+      provider({
+        provider: codex,
+        instanceId: "codex",
+        status: "error",
+        models: [{ slug: "gpt-5.4" }],
+      }),
+    ]);
+    expect(
+      isModelSelectionUsableInEnvironment(
+        createModelSelection(ProviderInstanceId.make("codex"), "gpt-5.4"),
+        errored,
+      ),
+    ).toBe(false);
+  });
+
+  it("skips a non-ready sticky/default and falls back to the next ready entry", () => {
+    const mixed = deriveProviderInstanceEntries([
+      provider({
+        provider: codex,
+        instanceId: "codex",
+        status: "error",
+        models: [{ slug: "gpt-broken" }],
+      }),
+      provider({
+        provider: claude,
+        instanceId: "claudeAgent",
+        models: [{ slug: "claude-fable-5" }],
+      }),
+    ]);
+    const sticky = createModelSelection(ProviderInstanceId.make("codex"), "gpt-broken");
+    expect(
+      resolveSpawnModelSelection({
+        sticky,
+        projectDefault: sticky,
+        entries: mixed,
+      }),
+    ).toEqual(createModelSelection(ProviderInstanceId.make("claudeAgent"), "claude-fable-5"));
   });
 
   it("skips stale sticky selection and uses the project default when usable", () => {

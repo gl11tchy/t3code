@@ -15,7 +15,10 @@ import { useCallback, useRef, useState } from "react";
 
 import { useComposerDraftStore } from "../../composerDraftStore";
 import { newMessageId, newThreadId, randomHex } from "../../lib/utils";
-import { deriveProviderInstanceEntries } from "../../providerInstances";
+import {
+  applyProviderInstanceSettings,
+  deriveProviderInstanceEntries,
+} from "../../providerInstances";
 import { readProject, useServerConfigs } from "../../state/entities";
 import { threadEnvironment } from "../../state/threads";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -93,12 +96,19 @@ export function useSpawnWorktreeAgents(): {
           return failAll("Project not found for the given projectRef.");
         }
 
-        const environmentProviders =
-          serverConfigs.get(input.projectRef.environmentId)?.providers ?? [];
+        // Match the model picker: overlay settings onto streamed provider
+        // snapshots so a just-disabled/deleted instance is not still selected
+        // from a stale enabled probe, then only accept ready instances.
+        const serverConfig = serverConfigs.get(input.projectRef.environmentId);
+        const environmentSettings = serverConfig?.settings ?? DEFAULT_SERVER_SETTINGS;
+        const environmentEntries = applyProviderInstanceSettings(
+          deriveProviderInstanceEntries(serverConfig?.providers ?? []),
+          environmentSettings,
+        );
         const modelSelection = resolveModelSelection(
           input.modelSelection,
           project.defaultModelSelection,
-          deriveProviderInstanceEntries(environmentProviders),
+          environmentEntries,
         );
         const titleSeed = truncate(plan.prompt);
 
@@ -115,8 +125,6 @@ export function useSpawnWorktreeAgents(): {
           baseBranch = resolved.branch;
         }
 
-        const environmentSettings =
-          serverConfigs.get(input.projectRef.environmentId)?.settings ?? DEFAULT_SERVER_SETTINGS;
         const startFromOrigin = environmentSettings.newWorktreesStartFromOrigin === true;
 
         const outcomes: SpawnAgentOutcome[] = [];
