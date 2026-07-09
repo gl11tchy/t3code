@@ -45,22 +45,35 @@ function makeShell(overrides: Partial<SidebarThreadSummary> = {}): SidebarThread
 }
 
 describe("isWorktreeThread", () => {
-  it("is true only for threads with a non-empty worktreePath", () => {
+  it("is true only for active threads with a non-empty worktreePath", () => {
     expect(isWorktreeThread(makeShell({ worktreePath: "/tmp/wt" }))).toBe(true);
     expect(isWorktreeThread(makeShell({ worktreePath: null }))).toBe(false);
     expect(isWorktreeThread(makeShell({ worktreePath: "   " as unknown as string }))).toBe(false);
+    expect(
+      isWorktreeThread(
+        makeShell({
+          worktreePath: "/tmp/wt",
+          archivedAt: "2026-03-01T00:00:00.000Z",
+        }),
+      ),
+    ).toBe(false);
   });
 });
 
 describe("filterWorktreeThreads", () => {
-  it("drops non-worktree threads", () => {
+  it("drops non-worktree and archived worktree threads", () => {
     const threads = [
       makeShell({ id: ThreadId.make("a"), worktreePath: "/tmp/a" }),
       makeShell({ id: ThreadId.make("b"), worktreePath: null }),
       makeShell({ id: ThreadId.make("c"), worktreePath: "/tmp/c" }),
+      makeShell({
+        id: ThreadId.make("archived"),
+        worktreePath: "/tmp/archived",
+        archivedAt: "2026-03-01T00:00:00.000Z",
+      }),
     ];
     const result = filterWorktreeThreads(threads);
-    // 'b' is dropped; 'a' and 'c' share updatedAt, so stable order is preserved.
+    // 'b' (no path) and 'archived' are dropped; 'a' and 'c' share updatedAt.
     expect(result.map((t) => t.id)).toEqual([ThreadId.make("a"), ThreadId.make("c")]);
   });
 

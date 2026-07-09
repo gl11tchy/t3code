@@ -161,7 +161,9 @@ export function defaultSelectableModelsForEntry(
 /**
  * Resolve a candidate model slug against a ready entry's selectable options.
  * Missing/hidden slugs fall back to the entry's first non-custom option, then
- * first option — same shape as the composer picker fallback.
+ * first option — same shape as the composer picker fallback. When the selectable
+ * list is empty (every catalog model is fork-hidden), fall back to
+ * `entry.models[0]` as last resort so spawn stays available like the composer.
  */
 export function resolveSpawnModelForEntry(
   entry: ProviderInstanceEntry,
@@ -174,7 +176,7 @@ export function resolveSpawnModelForEntry(
       : defaultSelectableModelsForEntry(entry);
 
   if (options.length === 0) {
-    return null;
+    return entry.models[0]?.slug ?? null;
   }
 
   const trimmed = typeof selectedModel === "string" ? selectedModel.trim() : "";
@@ -185,6 +187,7 @@ export function resolveSpawnModelForEntry(
   return (
     options.find((option) => !option.isCustom)?.slug ??
     options[0]?.slug ??
+    entry.models[0]?.slug ??
     DEFAULT_MODEL_BY_PROVIDER[entry.driverKind] ??
     DEFAULT_MODEL
   );

@@ -11,14 +11,19 @@ import {
 /** Canonical route for the orchestrator dashboard (file-based TanStack route). */
 export const ORCHESTRATOR_ROUTE_PATH = "/glitch/orchestrator" as const;
 
-/** A worktree thread is any thread with a non-empty worktreePath. */
+/**
+ * Active worktree thread: non-empty worktreePath and not archived.
+ * Matches the sidebar, which filters `archivedAt === null` before listing
+ * threads — archived shells still retain worktreePath and would otherwise
+ * reappear in the orchestrator fleet with PR/Delete actions.
+ */
 export function isWorktreeThread(thread: SidebarThreadSummary): boolean {
-  return (thread.worktreePath?.trim().length ?? 0) > 0;
+  return thread.archivedAt === null && (thread.worktreePath?.trim().length ?? 0) > 0;
 }
 
 /**
- * Keep only worktree-backed threads and sort most-recently-updated first so the
- * fleet reads top-down by freshness. Pure — returns a new array.
+ * Keep only active worktree-backed threads and sort most-recently-updated first
+ * so the fleet reads top-down by freshness. Pure — returns a new array.
  */
 export function filterWorktreeThreads(
   threads: ReadonlyArray<SidebarThreadSummary>,

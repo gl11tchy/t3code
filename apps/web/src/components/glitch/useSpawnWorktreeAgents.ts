@@ -258,10 +258,14 @@ function resolveModelSelection(
     entries,
     resolveModelForEntry: (entry, selectedModel) => {
       const options = getAppModelOptionsForInstance(unifiedSettings, entry);
+      // Composer parity (`resolveAppModelSelectionForInstance`): when every
+      // catalog model is fork-hidden (e.g. only Haiku on an older CLI), keep
+      // entry.models[0] as last resort instead of failing the whole batch.
       return (
         resolveSelectableModel(entry.driverKind, selectedModel, options) ??
         options.find((option) => !option.isCustom)?.slug ??
         options[0]?.slug ??
+        entry.models[0]?.slug ??
         null
       );
     },

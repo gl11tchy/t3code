@@ -366,4 +366,57 @@ describe("resolveSpawnModelForEntry", () => {
     expect(resolveSpawnModelForEntry(entry, "missing")).toBe("claude-fable-5");
     expect(resolveSpawnModelForEntry(entry, null)).toBe("claude-fable-5");
   });
+
+  it("falls back to entry.models[0] when every catalog model is fork-hidden", () => {
+    const [entry] = deriveProviderInstanceEntries([
+      provider({
+        provider: claude,
+        instanceId: "claudeAgent",
+        models: [{ slug: "claude-haiku-4-5" }],
+      }),
+    ]);
+    expect(entry).toBeDefined();
+    if (!entry) return;
+
+    // defaultSelectableModelsForEntry filters Haiku → empty list; last resort
+    // keeps the instance usable (composer parity).
+    expect(resolveSpawnModelForEntry(entry, "claude-haiku-4-5")).toBe("claude-haiku-4-5");
+    expect(resolveSpawnModelForEntry(entry, null)).toBe("claude-haiku-4-5");
+    expect(resolveSpawnModelForEntry(entry, "missing")).toBe("claude-haiku-4-5");
+  });
+
+  it("uses a caller-supplied selectable list when non-empty", () => {
+    const [entry] = deriveProviderInstanceEntries([
+      provider({
+        provider: claude,
+        instanceId: "claudeAgent",
+        models: [{ slug: "claude-haiku-4-5" }, { slug: "claude-fable-5" }],
+      }),
+    ]);
+    expect(entry).toBeDefined();
+    if (!entry) return;
+
+    expect(resolveSpawnModelForEntry(entry, "claude-fable-5", [{ slug: "claude-opus-4-6" }])).toBe(
+      "claude-opus-4-6",
+    );
+  });
+});
+
+describe("resolveSpawnModelSelection with only-hidden models", () => {
+  it("does not fail the batch when the only ready entry has only fork-hidden models", () => {
+    const onlyHaiku = deriveProviderInstanceEntries([
+      provider({
+        provider: claude,
+        instanceId: "claudeAgent",
+        models: [{ slug: "claude-haiku-4-5" }],
+      }),
+    ]);
+    const sticky = createModelSelection(ProviderInstanceId.make("claudeAgent"), "claude-haiku-4-5");
+    expect(resolveSpawnModelSelection({ sticky, entries: onlyHaiku })).toEqual(
+      createModelSelection(ProviderInstanceId.make("claudeAgent"), "claude-haiku-4-5"),
+    );
+    expect(resolveSpawnModelSelection({ entries: onlyHaiku })).toEqual(
+      createModelSelection(ProviderInstanceId.make("claudeAgent"), "claude-haiku-4-5"),
+    );
+  });
 });
