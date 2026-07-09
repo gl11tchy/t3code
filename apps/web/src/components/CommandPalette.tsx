@@ -84,6 +84,7 @@ import { getLatestThreadForProject } from "../lib/threadSort";
 import { cn, isMacPlatform, isWindowsPlatform, newProjectId } from "../lib/utils";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { buildThreadRouteParams, resolveThreadRouteTarget } from "../threadRoutes";
+import { useGlitchPaletteItems } from "./glitch/glitchPaletteItems"; // GLITCHY: fork-owned palette items
 import {
   applyWslEnvironmentConfiguration,
   parseWslUncPath,
@@ -1055,6 +1056,8 @@ function OpenCommandPaletteDialog(props: {
       await navigate({ to: "/settings" });
     },
   });
+
+  actionItems.push(...useGlitchPaletteItems()); // GLITCHY: register orchestrator + codex palette actions
 
   const rootGroups = buildRootGroups({ actionItems, recentThreadItems });
   const sourceSelectionViewValue =
