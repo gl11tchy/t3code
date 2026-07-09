@@ -11,7 +11,6 @@ import {
   type ServerProvider,
   type ServerSettings,
 } from "@t3tools/contracts";
-import { useAtomValue } from "@effect/atom-react";
 import { useRouter } from "@tanstack/react-router";
 import { useCallback, useMemo } from "react";
 
@@ -34,7 +33,6 @@ import {
   type ProviderInstanceEntry,
 } from "../../providerInstances";
 import { readThreadShell, useProjects, useServerConfigs } from "../../state/entities";
-import { primaryServerProvidersAtom, primaryServerSettingsAtom } from "../../state/server";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../../uiStateStore";
 import { useClientSettings } from "../../hooks/useSettings";
 import {
@@ -70,48 +68,19 @@ export interface DelegateToCodexInput {
 export function useDelegateToCodex(
   /**
    * When given, `isCodexAvailable` is computed from THIS project's environment —
-   * the same environment `delegateToCodex` will resolve providers from — instead
-   * of the primary server's.
+   * the same environment `delegateToCodex` will resolve providers from. When
+   * omitted/null, falls back to the default project (or false if none exist).
    */
   targetProjectRef?: ScopedProjectRef | null,
 ): {
   delegateToCodex: (input: DelegateToCodexInput) => Promise<{ ok: boolean; error?: string }>;
   isCodexAvailable: boolean;
 } {
-  const providers = useAtomValue(primaryServerProvidersAtom);
-  const primarySettings = useAtomValue(primaryServerSettingsAtom);
   const projects = useProjects();
   const serverConfigs = useServerConfigs();
   const projectOrder = useUiStateStore((store) => store.projectOrder);
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const router = useRouter();
-
-  // Primary entries only when no target project is in scope (e.g. empty shell).
-  // Never cross-route a target project's draft through primary providers.
-  // Overlay settings so a just-disabled/deleted Codex instance is not treated as ready.
-  const primaryProviderEntries = useMemo(
-    () =>
-      resolveEnvironmentProviderEntries(providers, primarySettings ?? DEFAULT_SERVER_SETTINGS) ??
-      [],
-    [primarySettings, providers],
-  );
-
-  const isCodexAvailable = useMemo(() => {
-    if (targetProjectRef) {
-      const targetConfig = serverConfigs.get(targetProjectRef.environmentId);
-      // Config not loaded yet (reconnect, cached remote) — do not claim available
-      // via the primary environment's Codex instance.
-      const entries = resolveEnvironmentProviderEntries(
-        targetConfig?.providers,
-        targetConfig?.settings,
-      );
-      if (!entries) {
-        return false;
-      }
-      return isCodexAvailableFromEntries(entries);
-    }
-    return isCodexAvailableFromEntries(primaryProviderEntries);
-  }, [primaryProviderEntries, serverConfigs, targetProjectRef]);
 
   const defaultProjectRef = useMemo((): ScopedProjectRef | null => {
     const orderedProjects = orderItemsByPreferredIds({
@@ -126,6 +95,29 @@ export function useDelegateToCodex(
     const first = orderedProjects[0];
     return first ? scopeProjectRef(first.environmentId, first.id) : null;
   }, [projectOrder, projects]);
+
+  // Availability must match a project that delegateToCodex can actually open a
+  // draft against. Fresh install / no projects → false even if a Codex provider
+  // is ready. Prefer the caller's target project, else the default project
+  // (same order as the action when projectRef is omitted). Never cross-route
+  // primary providers into another environment.
+  const isCodexAvailable = useMemo(() => {
+    const projectRef = targetProjectRef ?? defaultProjectRef;
+    if (!projectRef) {
+      return false;
+    }
+
+    const targetConfig = serverConfigs.get(projectRef.environmentId);
+    // Config not loaded yet (reconnect, cached remote) — do not claim available.
+    const entries = resolveEnvironmentProviderEntries(
+      targetConfig?.providers,
+      targetConfig?.settings,
+    );
+    if (!entries) {
+      return false;
+    }
+    return isCodexAvailableFromEntries(entries);
+  }, [defaultProjectRef, serverConfigs, targetProjectRef]);
 
   const delegateToCodex = useCallback(
     async (input: DelegateToCodexInput): Promise<{ ok: boolean; error?: string }> => {

@@ -21,6 +21,7 @@ import { getAppModelOptionsForInstance } from "../../modelSelection";
 import {
   applyProviderInstanceSettings,
   deriveProviderInstanceEntries,
+  sortProviderInstanceEntries,
   type ProviderInstanceEntry,
 } from "../../providerInstances";
 import { readProject, useServerConfigs } from "../../state/entities";
@@ -104,13 +105,16 @@ export function useSpawnWorktreeAgents(): {
 
         // Match the model picker: overlay settings onto streamed provider
         // snapshots so a just-disabled/deleted instance is not still selected
-        // from a stale enabled probe, then only accept ready instances with a
+        // from a stale enabled probe, sort with the same default-before-custom
+        // order the composer uses, then only accept ready instances with a
         // selectable model (hidden/absent slugs rewritten within the instance).
         const serverConfig = serverConfigs.get(input.projectRef.environmentId);
         const environmentSettings = serverConfig?.settings ?? DEFAULT_SERVER_SETTINGS;
-        const environmentEntries = applyProviderInstanceSettings(
-          deriveProviderInstanceEntries(serverConfig?.providers ?? []),
-          environmentSettings,
+        const environmentEntries = sortProviderInstanceEntries(
+          applyProviderInstanceSettings(
+            deriveProviderInstanceEntries(serverConfig?.providers ?? []),
+            environmentSettings,
+          ),
         );
         const modelSelection = resolveModelSelection(
           input.modelSelection,

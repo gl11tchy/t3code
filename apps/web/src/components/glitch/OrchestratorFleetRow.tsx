@@ -49,6 +49,7 @@ export function OrchestratorFleetRow({ thread }: OrchestratorFleetRowProps) {
     isDeleting,
     isDefaultBranch,
     isStatusLoading,
+    isBranchStatusKnown,
   } = useWorktreeThreadActions({
     environmentId: thread.environmentId,
     threadId: thread.id,
@@ -146,9 +147,14 @@ export function OrchestratorFleetRow({ thread }: OrchestratorFleetRowProps) {
           className={`h-7 gap-1 px-2 text-[11px] ${
             confirmDefaultBranchPr ? "border-destructive/60 text-destructive" : ""
           }`}
-          disabled={busy || worktreePath.length === 0 || isStatusLoading}
+          disabled={busy || worktreePath.length === 0 || isStatusLoading || !isBranchStatusKnown}
           onClick={handleCreatePr}
           onBlur={() => setConfirmDefaultBranchPr(false)}
+          title={
+            !isBranchStatusKnown && !isStatusLoading
+              ? "Branch status unavailable — open the thread to run git actions"
+              : undefined
+          }
         >
           {isPreparingPr ? (
             <Spinner className="size-3.5" />

@@ -61,10 +61,17 @@ export function useWorktreeThreadActions(input: WorktreeThreadActionsInput): {
    * True when VCS status reports the worktree is on the default branch.
    * Callers should gate the PR button through a confirmation step (same
    * contract as GitActionsControl's `requiresDefaultBranchConfirmation`).
+   * False when status is unknown — use `isBranchStatusKnown` / disable PR.
    */
   isDefaultBranch: boolean;
   /** True while VCS status for the worktree is still loading. */
   isStatusLoading: boolean;
+  /**
+   * False when status has not loaded (pending finished with no data, or the
+   * query errored). GitActionsControl does not expose PR actions without status;
+   * callers should disable the PR button when this is false.
+   */
+  isBranchStatusKnown: boolean;
 } {
   const { environmentId, threadId, worktreePath, title } = input;
 
@@ -82,6 +89,9 @@ export function useWorktreeThreadActions(input: WorktreeThreadActionsInput): {
         })
       : null,
   );
+  // Failed/missing status must not coerce to "non-default" — that skipped the
+  // default-branch confirmation and let commit_push_pr run unsafely.
+  const isBranchStatusKnown = gitStatus.data != null;
   const isDefaultBranch = gitStatus.data?.isDefaultRef === true;
   const isStatusLoading = worktreePath.length > 0 && gitStatus.isPending;
 
@@ -91,9 +101,18 @@ export function useWorktreeThreadActions(input: WorktreeThreadActionsInput): {
   const createPullRequest = useCallback(
     async (options?: CreatePullRequestOptions): Promise<WorktreeThreadActionsResult> => {
       try {
-        // Mirror GitActionsControl: never run commit_push_pr on the default
-        // branch without an explicit confirmation step. Orchestrator lists any
-        // thread with a worktreePath, not only temporary feature branches.
+        // Mirror GitActionsControl: refuse PR when branch status is unknown, and
+        // never run commit_push_pr on the default branch without confirmation.
+        // Orchestrator lists any thread with a worktreePath, not only temps.
+        if (!isBranchStatusKnown) {
+          return {
+            ok: false,
+            error:
+              gitStatus.error?.trim() ||
+              "Could not determine whether this worktree is on the default branch. Open the thread to run git actions, or retry once status loads.",
+          };
+        }
+
         if (
           requiresDefaultBranchConfirmation("commit_push_pr", isDefaultBranch) &&
           options?.confirmDefaultBranch !== true
@@ -125,7 +144,14 @@ export function useWorktreeThreadActions(input: WorktreeThreadActionsInput): {
         return { ok: false, error: formatUnknownError(error, "Failed to create pull request.") };
       }
     },
-    [gitStatus.data?.refName, isDefaultBranch, stackedAction, title],
+    [
+      gitStatus.data?.refName,
+      gitStatus.error,
+      isBranchStatusKnown,
+      isDefaultBranch,
+      stackedAction,
+      title,
+    ],
   );
 
   const deleteThread = useCallback(async (): Promise<WorktreeThreadActionsResult> => {
@@ -156,5 +182,6 @@ export function useWorktreeThreadActions(input: WorktreeThreadActionsInput): {
     isDeleting,
     isDefaultBranch,
     isStatusLoading,
+    isBranchStatusKnown,
   };
 }
