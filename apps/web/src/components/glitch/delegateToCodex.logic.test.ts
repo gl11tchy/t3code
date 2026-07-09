@@ -162,6 +162,28 @@ describe("pickCodexDefaultModel / buildCodexModelSelection", () => {
     });
   });
 
+  it("prefers a selectableModels list so user-hidden first catalog models are skipped", () => {
+    const [entry] = deriveProviderInstanceEntries([
+      provider({
+        provider: codex,
+        instanceId: "codex",
+        models: [{ slug: "gpt-hidden" }, { slug: "gpt-5.4" }],
+      }),
+    ]);
+    expect(entry).toBeDefined();
+    // Without preferences, raw catalog still picks the first non-custom.
+    expect(pickCodexDefaultModel(entry!)).toBe("gpt-hidden");
+    // Picker path supplies the filtered list after hidden-model preferences.
+    expect(pickCodexDefaultModel(entry!, [{ slug: "gpt-5.4" }])).toBe("gpt-5.4");
+    expect(
+      buildCodexModelSelection(entry!, [{ slug: "gpt-5.4" }], [{ id: "effort", value: "high" }]),
+    ).toEqual({
+      instanceId: ProviderInstanceId.make("codex"),
+      model: "gpt-5.4",
+      options: [{ id: "effort", value: "high" }],
+    });
+  });
+
   it("falls back to contracts default when the instance has no models", () => {
     const [entry] = deriveProviderInstanceEntries([
       provider({ provider: codex, instanceId: "codex", models: [] }),

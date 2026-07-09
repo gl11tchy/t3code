@@ -199,6 +199,17 @@ export type ResolveSpawnModelForEntry = (
 ) => string | null;
 
 /**
+ * Optional composer-parity path for provider option defaults (reasoning effort,
+ * service tier, etc.). Receives any persisted candidate options so sticky
+ * overrides are preserved while missing defaults are filled from descriptors.
+ */
+export type ResolveSpawnModelOptionsForEntry = (
+  entry: ProviderInstanceEntry,
+  model: string,
+  candidateOptions: ModelSelection["options"] | undefined,
+) => ModelSelection["options"] | undefined;
+
+/**
  * Resolve model selection for a spawn batch against the *target* environment's
  * provider entries. Priority: explicit → sticky → project default → first
  * ready entry in the environment.
@@ -220,11 +231,27 @@ export function resolveSpawnModelSelection(input: {
    * uses entry.models minus fork-hidden slugs.
    */
   resolveModelForEntry?: ResolveSpawnModelForEntry;
+  /**
+   * Optional settings-aware option resolver (composer parity). When omitted,
+   * candidate.options are passed through as-is and fallback selections have
+   * no options.
+   */
+  resolveModelOptionsForEntry?: ResolveSpawnModelOptionsForEntry;
 }): ModelSelection | null {
   const resolveModel =
     input.resolveModelForEntry ??
     ((entry: ProviderInstanceEntry, selectedModel: string | null | undefined) =>
       resolveSpawnModelForEntry(entry, selectedModel));
+
+  const buildSelection = (
+    entry: ProviderInstanceEntry,
+    model: string,
+    candidateOptions: ModelSelection["options"] | undefined,
+  ): ModelSelection => {
+    const options =
+      input.resolveModelOptionsForEntry?.(entry, model, candidateOptions) ?? candidateOptions;
+    return createModelSelection(entry.instanceId, model, options);
+  };
 
   const trySelection = (candidate: ModelSelection | null | undefined): ModelSelection | null => {
     if (!candidate || !isModelSelectionUsableInEnvironment(candidate, input.entries)) {
@@ -240,7 +267,7 @@ export function resolveSpawnModelSelection(input: {
     if (!model) {
       return null;
     }
-    return createModelSelection(entry.instanceId, model, candidate.options);
+    return buildSelection(entry, model, candidate.options);
   };
 
   const candidates: Array<ModelSelection | null | undefined> = [
@@ -259,7 +286,7 @@ export function resolveSpawnModelSelection(input: {
   if (fallbackEntry) {
     const model = resolveModel(fallbackEntry, null);
     if (model) {
-      return createModelSelection(fallbackEntry.instanceId, model);
+      return buildSelection(fallbackEntry, model, undefined);
     }
   }
 

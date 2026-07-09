@@ -347,6 +347,45 @@ describe("isModelSelectionUsableInEnvironment / resolveSpawnModelSelection", () 
       }),
     ).toEqual(createModelSelection(ProviderInstanceId.make("codex"), "resolved-from-settings"));
   });
+
+  it("fills model options via resolveModelOptionsForEntry for bare defaults", () => {
+    const projectDefault = createModelSelection(ProviderInstanceId.make("codex"), "gpt-5.4");
+    const filledOptions = [{ id: "effort", value: "high" }] as const;
+    expect(
+      resolveSpawnModelSelection({
+        projectDefault,
+        entries,
+        resolveModelOptionsForEntry: (_entry, model, candidateOptions) => {
+          expect(model).toBe("gpt-5.4");
+          expect(candidateOptions).toBeUndefined();
+          return [...filledOptions];
+        },
+      }),
+    ).toEqual(
+      createModelSelection(ProviderInstanceId.make("codex"), "gpt-5.4", [...filledOptions]),
+    );
+  });
+
+  it("passes sticky candidate options into resolveModelOptionsForEntry", () => {
+    const stickyOptions = [{ id: "effort", value: "low" }] as const;
+    const sticky = createModelSelection(ProviderInstanceId.make("codex"), "gpt-5.4", [
+      ...stickyOptions,
+    ]);
+    expect(
+      resolveSpawnModelSelection({
+        sticky,
+        entries,
+        resolveModelOptionsForEntry: (_entry, _model, candidateOptions) => {
+          expect(candidateOptions).toEqual([...stickyOptions]);
+          return [{ id: "effort", value: "xhigh" }];
+        },
+      }),
+    ).toEqual(
+      createModelSelection(ProviderInstanceId.make("codex"), "gpt-5.4", [
+        { id: "effort", value: "xhigh" },
+      ]),
+    );
+  });
 });
 
 describe("resolveSpawnModelForEntry", () => {

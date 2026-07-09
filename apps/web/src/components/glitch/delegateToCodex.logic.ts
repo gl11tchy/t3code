@@ -56,9 +56,20 @@ export function isCodexAvailableFromEntries(
 /**
  * Pick the instance's default model: first non-custom model, else first model,
  * else the contracts default for the driver / global DEFAULT_MODEL.
+ *
+ * When `selectableModels` is provided (composer/picker path after hidden-model
+ * preferences), prefer that list so user-hidden Codex slugs are not written
+ * onto the draft.
  */
-export function pickCodexDefaultModel(entry: ProviderInstanceEntry): string {
+export function pickCodexDefaultModel(
+  entry: ProviderInstanceEntry,
+  selectableModels?: ReadonlyArray<{ slug: string; isCustom?: boolean }> | null,
+): string {
+  const pool = selectableModels && selectableModels.length > 0 ? selectableModels : entry.models;
+
   return (
+    pool.find((model) => !model.isCustom)?.slug ??
+    pool[0]?.slug ??
     entry.models.find((model) => !model.isCustom)?.slug ??
     entry.models[0]?.slug ??
     DEFAULT_MODEL_BY_PROVIDER[entry.driverKind] ??
@@ -66,8 +77,16 @@ export function pickCodexDefaultModel(entry: ProviderInstanceEntry): string {
   );
 }
 
-export function buildCodexModelSelection(entry: ProviderInstanceEntry): ModelSelection {
-  return createModelSelection(entry.instanceId, pickCodexDefaultModel(entry));
+export function buildCodexModelSelection(
+  entry: ProviderInstanceEntry,
+  selectableModels?: ReadonlyArray<{ slug: string; isCustom?: boolean }> | null,
+  options?: ModelSelection["options"],
+): ModelSelection {
+  return createModelSelection(
+    entry.instanceId,
+    pickCodexDefaultModel(entry, selectableModels),
+    options,
+  );
 }
 
 /**

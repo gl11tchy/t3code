@@ -14,6 +14,7 @@ import { createModelSelection, resolveSelectableModel } from "@t3tools/shared/mo
 import { truncate } from "@t3tools/shared/String";
 import { useCallback, useRef, useState } from "react";
 
+import { getComposerProviderState } from "../chat/composerProviderState";
 import { useComposerDraftStore } from "../../composerDraftStore";
 import { getClientSettings, mergeEnvironmentSettings } from "../../hooks/useSettings";
 import { newMessageId, newThreadId, randomHex } from "../../lib/utils";
@@ -272,6 +273,18 @@ function resolveModelSelection(
         entry.models[0]?.slug ??
         null
       );
+    },
+    // Rebuild modelOptionsForDispatch from option descriptors so fresh
+    // project/default selections get catalog defaults (reasoning effort, etc.)
+    // instead of dispatching with empty options.
+    resolveModelOptionsForEntry: (entry, model, candidateOptions) => {
+      const { modelOptionsForDispatch } = getComposerProviderState({
+        provider: entry.driverKind,
+        model,
+        models: entry.models,
+        modelOptions: candidateOptions,
+      });
+      return modelOptionsForDispatch;
     },
   });
 }

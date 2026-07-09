@@ -15,6 +15,7 @@ import { useRouter } from "@tanstack/react-router";
 import { useCallback, useMemo } from "react";
 
 import { orderItemsByPreferredIds } from "../Sidebar.logic";
+import { getComposerProviderState } from "../chat/composerProviderState";
 import {
   type DraftThreadEnvMode,
   markPromotedDraftThreadByRef,
@@ -27,6 +28,7 @@ import {
   getProjectOrderKey,
   selectProjectGroupingSettings,
 } from "../../logicalProject";
+import { getAppModelOptionsForInstance } from "../../modelSelection";
 import {
   applyProviderInstanceSettings,
   deriveProviderInstanceEntries,
@@ -34,11 +36,16 @@ import {
 } from "../../providerInstances";
 import { readThreadShell, useProjects, useServerConfigs } from "../../state/entities";
 import { legacyProjectCwdPreferenceKey, useUiStateStore } from "../../uiStateStore";
-import { useClientSettings } from "../../hooks/useSettings";
+import {
+  getClientSettings,
+  mergeEnvironmentSettings,
+  useClientSettings,
+} from "../../hooks/useSettings";
 import {
   buildCodexModelSelection,
   isCodexAvailableFromEntries,
   normalizeDelegateToCodexInput,
+  pickCodexDefaultModel,
   resolveCodexInstance,
 } from "./delegateToCodex.logic";
 
@@ -167,7 +174,22 @@ export function useDelegateToCodex(
           ? deriveLogicalProjectKeyFromSettings(project, projectGroupingSettings)
           : scopedProjectKey(projectRef);
 
-        const codexSelection = buildCodexModelSelection(codexEntry);
+        // Composer parity: respect hidden/reordered model preferences and fill
+        // provider option defaults (reasoning effort, etc.) from descriptors.
+        const unifiedSettings = mergeEnvironmentSettings(environmentSettings, getClientSettings());
+        const selectableModels = getAppModelOptionsForInstance(unifiedSettings, codexEntry);
+        const codexModel = pickCodexDefaultModel(codexEntry, selectableModels);
+        const { modelOptionsForDispatch } = getComposerProviderState({
+          provider: codexEntry.driverKind,
+          model: codexModel,
+          models: codexEntry.models,
+          modelOptions: undefined,
+        });
+        const codexSelection = buildCodexModelSelection(
+          codexEntry,
+          selectableModels,
+          modelOptionsForDispatch,
+        );
         const {
           getDraftSessionByLogicalProjectKey,
           setDraftThreadContext,
