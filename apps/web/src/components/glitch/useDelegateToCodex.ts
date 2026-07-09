@@ -185,11 +185,14 @@ export function useDelegateToCodex(
           models: codexEntry.models,
           modelOptions: undefined,
         });
-        const codexSelection = buildCodexModelSelection(
-          codexEntry,
-          selectableModels,
-          modelOptionsForDispatch,
-        );
+        // Always include an explicit `options` array (possibly empty).
+        // setModelSelection preserves existing draft options when the new
+        // selection omits the field, which would keep stale reasoning/tier
+        // options from a reused unsent draft.
+        const codexSelection = {
+          ...buildCodexModelSelection(codexEntry, selectableModels, modelOptionsForDispatch),
+          options: modelOptionsForDispatch ?? [],
+        };
         const {
           getDraftSessionByLogicalProjectKey,
           setDraftThreadContext,

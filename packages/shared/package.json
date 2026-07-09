@@ -7,6 +7,10 @@
       "types": "./src/model.ts",
       "import": "./src/model.ts"
     },
+    "./glitchModelPolicy": {
+      "types": "./src/glitchModelPolicy.ts",
+      "import": "./src/glitchModelPolicy.ts"
+    },
     "./advertisedEndpoint": {
       "types": "./src/advertisedEndpoint.ts",
       "import": "./src/advertisedEndpoint.ts"

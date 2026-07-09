@@ -154,33 +154,6 @@ export const DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER: Partial<
   [OPENCODE_DRIVER_KIND]: "openai/gpt-5",
 };
 
-/**
- * GLITCHY: models that must not be used for git/text generation. Changing the
- * Claude default above only helps new installs — upgraded users may still have
- * a persisted Haiku `textGenerationModelSelection`. Callers should rewrite
- * those at read time via `isForbiddenTextGenerationModel`.
- */
-export const FORBIDDEN_TEXT_GENERATION_MODEL_SLUGS: ReadonlyArray<string> = [
-  "claude-haiku-4-5",
-  "claude-haiku-4.5",
-  "claude-haiku-4-5-20251001",
-  "haiku",
-  "haiku-4.5",
-];
-
-/** True when a text-generation model slug is fork-forbidden (Haiku family). */
-export function isForbiddenTextGenerationModel(model: string): boolean {
-  const slug = model.trim().toLowerCase();
-  if (slug.length === 0) {
-    return false;
-  }
-  if (FORBIDDEN_TEXT_GENERATION_MODEL_SLUGS.some((candidate) => candidate === slug)) {
-    return true;
-  }
-  // Catch dated / future Haiku variants without listing every catalog slug.
-  return slug.includes("haiku");
-}
-
 export const MODEL_SLUG_ALIASES_BY_PROVIDER: Partial<
   Record<ProviderDriverKind, Record<string, string>>
 > = {

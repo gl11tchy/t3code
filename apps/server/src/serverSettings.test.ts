@@ -233,6 +233,37 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 
+  it.effect(
+    "falls back the whole text-generation selection when Haiku is on a custom driver without defaults",
+    () =>
+      Effect.gen(function* () {
+        const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+        const customId = ProviderInstanceId.make("ollama_local");
+
+        const next = yield* serverSettings.updateSettings({
+          providers: {
+            codex: { enabled: true },
+          },
+          providerInstances: {
+            [customId]: {
+              driver: ProviderDriverKind.make("ollama"),
+              enabled: true,
+              config: {},
+            },
+          },
+          textGenerationModelSelection: {
+            instanceId: customId,
+            model: "claude-haiku-4.5",
+          },
+        });
+
+        // Must not keep ollama_local + gpt-5.4-mini; fall back to an enabled
+        // provider that has a known text-generation default.
+        assert.notEqual(next.textGenerationModelSelection.instanceId, customId);
+        assert.notMatch(next.textGenerationModelSelection.model, /haiku/i);
+      }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
   it.effect("preserves model when switching providers via textGenerationModelSelection", () =>
     Effect.gen(function* () {
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;

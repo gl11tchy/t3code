@@ -15,7 +15,6 @@ import {
   DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER,
   DEFAULT_MODEL_BY_PROVIDER,
   DEFAULT_SERVER_SETTINGS,
-  isForbiddenTextGenerationModel,
   isProviderDriverKind,
   type ModelSelection,
   type ProviderInstanceConfig,
@@ -26,6 +25,7 @@ import {
   ServerSettingsError,
   type ServerSettingsPatch,
 } from "@t3tools/contracts";
+import { isForbiddenTextGenerationModel } from "@t3tools/shared/glitchModelPolicy";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
@@ -202,8 +202,12 @@ function resolveTextGenerationProvider(settings: ServerSettings): ServerSettings
 
 /**
  * GLITCHY: upgraded installs may still have Haiku as the persisted text-
- * generation model. Rewrite those at read time to the per-provider default
+ * generation model. Rewrite those at read time to the per-driver default
  * (Claude → sonnet) so GitManager commit/PR copy never routes to Haiku.
+ *
+ * Only rewrite in-place when the driver has a known default model. Otherwise
+ * fall back the whole selection — never pair a custom/third-party instanceId
+ * with the global Codex default, which that instance may not serve.
  */
 function rewriteForbiddenTextGenerationModel(settings: ServerSettings): ServerSettings {
   const selection = settings.textGenerationModelSelection;
@@ -212,22 +216,21 @@ function rewriteForbiddenTextGenerationModel(settings: ServerSettings): ServerSe
   }
 
   const driver = resolveTextGenerationDriver(settings, selection.instanceId);
-  const model =
+  const knownDefault =
     (driver ? DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER[driver] : undefined) ??
-    (driver ? DEFAULT_MODEL_BY_PROVIDER[driver] : undefined) ??
-    DEFAULT_GIT_TEXT_GENERATION_MODEL;
+    (driver ? DEFAULT_MODEL_BY_PROVIDER[driver] : undefined);
 
-  if (selection.model === model) {
-    return settings;
+  if (knownDefault && knownDefault !== selection.model) {
+    return {
+      ...settings,
+      textGenerationModelSelection: {
+        instanceId: selection.instanceId,
+        model: knownDefault,
+      } satisfies ModelSelection,
+    };
   }
 
-  return {
-    ...settings,
-    textGenerationModelSelection: {
-      instanceId: selection.instanceId,
-      model,
-    } satisfies ModelSelection,
-  };
+  return fallbackTextGenerationProvider(settings);
 }
 
 function resolveTextGenerationDriver(

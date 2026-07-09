@@ -1,9 +1,8 @@
-// GLITCHY (gl11tchy): fork-owned orchestration layer — lazy per-worktree-thread diff inspector
+// GLITCHY (gl11tchy): fork-owned orchestration layer — lazy per-worktree-thread live diff
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { useMemo } from "react";
 
-import { useCheckpointDiff } from "../../lib/checkpointDiffState";
 import {
   buildFileDiffRenderKey,
   getRenderablePatch,
@@ -11,13 +10,16 @@ import {
   resolveFileDiffPath,
 } from "../../lib/diffRendering";
 import { useTheme } from "../../hooks/useTheme";
-import { useThread } from "../../state/entities";
+import { useEnvironmentQuery } from "../../state/query";
+import { reviewEnvironment } from "../../state/review";
 import { AnnotatableCodeView } from "../diffs/AnnotatableCodeView";
 import { Spinner } from "../ui/spinner";
 
 interface OrchestratorThreadDiffProps {
   environmentId: EnvironmentId;
   threadId: ThreadId;
+  /** Worktree checkout path — live PR-bound diff is against this cwd. */
+  worktreePath: string;
   /** Only fetch + render when the row is expanded (lazy). */
   enabled: boolean;
 }
@@ -26,46 +28,49 @@ function StatusLine({ children }: { children: React.ReactNode }) {
   return <p className="px-3 py-2 font-mono text-[11px] text-muted-foreground/75">{children}</p>;
 }
 
+/**
+ * Live worktree diff for orchestrator rows — matches what the PR action will
+ * commit (working tree), not a stale checkpoint-to-checkpoint range that can
+ * miss manual/setup-script edits after the latest ready checkpoint.
+ */
 export function OrchestratorThreadDiff({
   environmentId,
   threadId,
+  worktreePath,
   enabled,
 }: OrchestratorThreadDiffProps) {
   const threadRef = useMemo(
     () => scopeThreadRef(environmentId, threadId),
     [environmentId, threadId],
   );
-
-  // Thread detail carries the checkpoints; bound the full-thread diff at the
-  // LATEST READY checkpoint (fromTurnCount 0 → routes to fullThreadDiff). A
-  // running turn streams a "missing"-status placeholder checkpoint whose ref
-  // does not exist yet — diffing against it would fail. Only loaded while expanded.
-  const thread = useThread(enabled ? threadRef : null);
-  const checkpoints = thread?.checkpoints;
-  const toTurnCount = useMemo(() => {
-    let latestReady = 0;
-    for (const checkpoint of checkpoints ?? []) {
-      if (checkpoint.status === "ready" && checkpoint.checkpointTurnCount > latestReady) {
-        latestReady = checkpoint.checkpointTurnCount;
-      }
-    }
-    return latestReady;
-  }, [checkpoints]);
-
-  const diffState = useCheckpointDiff(
-    {
-      environmentId,
-      threadId,
-      fromTurnCount: 0,
-      toTurnCount,
-      ignoreWhitespace: false,
-      cacheScope: `glitch-orchestrator:${threadId}`,
-    },
-    { enabled: enabled && toTurnCount > 0 },
+  const cwd = worktreePath.trim();
+  const diffPreview = useEnvironmentQuery(
+    enabled && cwd.length > 0
+      ? reviewEnvironment.diffPreview({
+          environmentId,
+          input: {
+            cwd,
+            ignoreWhitespace: false,
+          },
+        })
+      : null,
   );
 
+  // Prefer uncommitted working-tree changes (what commit_push_pr will stage).
+  // If the tree is clean, fall back to the branch-range preview so committed
+  // but unpushed work is still visible before opening a PR.
+  const selectedSource = useMemo(() => {
+    const sources = diffPreview.data?.sources ?? [];
+    const workingTree = sources.find((source) => source.kind === "working-tree");
+    const branchRange = sources.find((source) => source.kind === "branch-range");
+    if (workingTree && workingTree.diff.trim().length > 0) {
+      return workingTree;
+    }
+    return branchRange ?? workingTree ?? null;
+  }, [diffPreview.data?.sources]);
+
   const { resolvedTheme } = useTheme();
-  const patch = diffState.data?.diff;
+  const patch = selectedSource?.diff;
 
   const renderablePatch = useMemo(
     () => getRenderablePatch(patch, `glitch-orchestrator:${resolvedTheme}`),
@@ -94,11 +99,11 @@ export function OrchestratorThreadDiff({
     return null;
   }
 
-  if (toTurnCount === 0) {
-    return <StatusLine>No completed turns yet — nothing to diff.</StatusLine>;
+  if (cwd.length === 0) {
+    return <StatusLine>No worktree path — nothing to diff.</StatusLine>;
   }
 
-  if (diffState.isPending && !patch) {
+  if (diffPreview.isPending && !diffPreview.data) {
     return (
       <p className="flex items-center gap-2 px-3 py-2 font-mono text-[11px] text-muted-foreground/75">
         <Spinner className="size-3" />
@@ -107,10 +112,10 @@ export function OrchestratorThreadDiff({
     );
   }
 
-  if (diffState.error) {
+  if (diffPreview.error) {
     return (
       <StatusLine>
-        <span className="text-destructive">Diff failed:</span> {diffState.error}
+        <span className="text-destructive">Diff failed:</span> {diffPreview.error}
       </StatusLine>
     );
   }
@@ -135,7 +140,7 @@ export function OrchestratorThreadDiff({
       className="diff-render-surface max-h-[420px] overflow-auto"
       files={codeViewFiles}
       sectionId={`glitch-diff:${threadId}`}
-      sectionTitle="Worktree diff"
+      sectionTitle={selectedSource?.kind === "working-tree" ? "Working tree" : "Branch changes"}
       composerDraftTarget={threadRef}
       renderHeaderPrefix={() => null}
       options={{

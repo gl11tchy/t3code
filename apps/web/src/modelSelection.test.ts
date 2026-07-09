@@ -189,6 +189,24 @@ describe("instance-scoped model selection", () => {
   });
 
   // GLITCHY:
+  it("hides every Haiku alias slug from provider option lists", () => {
+    const providers = [
+      provider({
+        instanceId: "claudeAgent",
+        models: ["claude-haiku-4.5", "claude-haiku-4-5-20251001", "haiku", "claude-sonnet-5"],
+      }),
+    ];
+
+    expect(
+      getAppModelOptions(
+        settingsWithProviderInstances(),
+        providers,
+        ProviderDriverKind.make("claudeAgent"),
+      ).map((option) => option.slug),
+    ).toEqual(["claude-sonnet-5"]);
+  });
+
+  // GLITCHY:
   it("keeps fork-hidden custom models in instance option lists", () => {
     const providers = [
       provider({

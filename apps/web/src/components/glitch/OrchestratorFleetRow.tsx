@@ -194,6 +194,7 @@ export function OrchestratorFleetRow({ thread }: OrchestratorFleetRowProps) {
           <OrchestratorThreadDiff
             environmentId={thread.environmentId}
             threadId={thread.id}
+            worktreePath={worktreePath}
             enabled={expanded}
           />
         </div>

@@ -7,7 +7,7 @@ import {
 } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 
-import { HIDDEN_MODEL_SLUGS } from "../../glitchModelPolicy";
+import { isForkHiddenModelSlug } from "../../glitchModelPolicy";
 import { isProviderInstancePickerReady, type ProviderInstanceEntry } from "../../providerInstances";
 
 /** Matches the public hook input shape (logic layer only needs prompt + count). */
@@ -144,17 +144,16 @@ export function isModelSelectionUsableInEnvironment(
   return entry !== undefined && isProviderInstancePickerReady(entry);
 }
 
-const HIDDEN_MODEL_SLUG_SET = new Set(HIDDEN_MODEL_SLUGS);
-
 /**
  * Default selectable models for an entry when the caller does not supply a
- * settings-aware resolver: built-in models minus fork-hidden slugs, plus customs.
+ * settings-aware resolver: built-in models minus fork-hidden slugs (every Haiku
+ * alias), plus customs.
  */
 export function defaultSelectableModelsForEntry(
   entry: ProviderInstanceEntry,
 ): ReadonlyArray<{ slug: string; isCustom: boolean }> {
   return entry.models
-    .filter((model) => model.isCustom || !HIDDEN_MODEL_SLUG_SET.has(model.slug))
+    .filter((model) => model.isCustom || !isForkHiddenModelSlug(model.slug))
     .map((model) => ({ slug: model.slug, isCustom: model.isCustom }));
 }
 
