@@ -68,7 +68,9 @@ export function OrchestratorFleetRow({ thread }: OrchestratorFleetRowProps) {
     }
     setConfirmRemove(false);
     setFeedback(null);
-    applyResult(await deleteThread(), "Thread deleted; worktree cleaned up.");
+    // deleteThread only guarantees the thread is gone — worktree removal is
+    // optional (browser has no confirm path; desktop can decline the prompt).
+    applyResult(await deleteThread(), "Thread deleted.");
   }, [applyResult, confirmRemove, deleteThread]);
 
   const busy = isPreparingPr || isDeleting;

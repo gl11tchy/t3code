@@ -154,11 +154,11 @@ export function useDelegateToCodex(
         }
 
         if (reusableStoredDraftThread) {
-          if (input.envMode !== undefined) {
-            setDraftThreadContext(reusableStoredDraftThread.draftId, {
-              envMode: initialEnvMode,
-            });
-          }
+          // Always apply the normalized envMode (defaults to "local") so a
+          // pre-existing worktree draft is not reused with the wrong mode.
+          setDraftThreadContext(reusableStoredDraftThread.draftId, {
+            envMode: initialEnvMode,
+          });
           setLogicalProjectDraftThreadId(
             logicalProjectKey,
             projectRef,
