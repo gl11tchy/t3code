@@ -232,9 +232,10 @@ export function resolveSpawnModelSelection(input: {
    */
   resolveModelForEntry?: ResolveSpawnModelForEntry;
   /**
-   * Optional settings-aware option resolver (composer parity). When omitted,
-   * candidate.options are passed through as-is and fallback selections have
-   * no options.
+   * Optional settings-aware option resolver (composer parity). When supplied,
+   * its return value is authoritative — including `undefined` when the target
+   * model has no option descriptors. Only fall back to candidate.options when
+   * no resolver is provided (do not revive stale sticky options after a clear).
    */
   resolveModelOptionsForEntry?: ResolveSpawnModelOptionsForEntry;
 }): ModelSelection | null {
@@ -248,8 +249,9 @@ export function resolveSpawnModelSelection(input: {
     model: string,
     candidateOptions: ModelSelection["options"] | undefined,
   ): ModelSelection => {
-    const options =
-      input.resolveModelOptionsForEntry?.(entry, model, candidateOptions) ?? candidateOptions;
+    const options = input.resolveModelOptionsForEntry
+      ? input.resolveModelOptionsForEntry(entry, model, candidateOptions)
+      : candidateOptions;
     return createModelSelection(entry.instanceId, model, options);
   };
 

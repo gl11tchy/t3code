@@ -386,6 +386,21 @@ describe("isModelSelectionUsableInEnvironment / resolveSpawnModelSelection", () 
       ]),
     );
   });
+
+  it("does not revive candidate options when the resolver clears them", () => {
+    const sticky = createModelSelection(ProviderInstanceId.make("codex"), "gpt-5.4", [
+      { id: "reasoningEffort", value: "high" },
+      { id: "serviceTier", value: "flex" },
+    ]);
+    expect(
+      resolveSpawnModelSelection({
+        sticky,
+        entries,
+        resolveModelForEntry: () => "model-with-no-options",
+        resolveModelOptionsForEntry: () => undefined,
+      }),
+    ).toEqual(createModelSelection(ProviderInstanceId.make("codex"), "model-with-no-options"));
+  });
 });
 
 describe("resolveSpawnModelForEntry", () => {

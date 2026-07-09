@@ -202,6 +202,37 @@ it.layer(NodeServices.layer)("server settings", (it) => {
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 
+  it.effect("rewrites persisted Haiku text-generation selections at read time", () =>
+    Effect.gen(function* () {
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+
+      const next = yield* serverSettings.updateSettings({
+        textGenerationModelSelection: {
+          instanceId: ProviderInstanceId.make("claudeAgent"),
+          model: "claude-haiku-4-5",
+          options: createModelSelection(
+            ProviderInstanceId.make("claudeAgent"),
+            "claude-haiku-4-5",
+            [{ id: "effort", value: "low" }],
+          ).options!,
+        },
+      });
+
+      // Fork policy: never route git/PR text generation to Haiku, even when
+      // the on-disk preference still names it after upgrade.
+      assert.deepEqual(next.textGenerationModelSelection, {
+        instanceId: ProviderInstanceId.make("claudeAgent"),
+        model: "claude-sonnet-5",
+      });
+
+      const reread = yield* serverSettings.getSettings;
+      assert.deepEqual(reread.textGenerationModelSelection, {
+        instanceId: ProviderInstanceId.make("claudeAgent"),
+        model: "claude-sonnet-5",
+      });
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
   it.effect("preserves model when switching providers via textGenerationModelSelection", () =>
     Effect.gen(function* () {
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
