@@ -178,8 +178,8 @@ const getLegacyProviderSettings = (
  * Ensure the `textGenerationModelSelection` points to an enabled provider and
  * is not a fork-forbidden model (e.g. Claude Haiku). If the selected provider
  * is disabled, fall back to the first enabled provider with its default model.
- * Applied at read-time so the on-disk preference can stay unchanged while
- * runtime consumers never see a disabled or forbidden selection.
+ * Applied at read-time so the on-disk preference can stay unchanged. When no
+ * safe fallback exists, text generation rejects the selection before dispatch.
  */
 function resolveTextGenerationProvider(settings: ServerSettings): ServerSettings {
   const selection = settings.textGenerationModelSelection;
@@ -248,9 +248,18 @@ function resolveTextGenerationDriver(
 }
 
 function fallbackTextGenerationProvider(settings: ServerSettings): ServerSettings {
-  const fallbackEntry = Object.entries(settings.providers).find(([, provider]) => provider.enabled);
+  const fallbackEntry = Object.entries(settings.providers).find(([providerId, provider]) => {
+    if (!provider.enabled) {
+      return false;
+    }
+    const instanceId = ProviderInstanceId.make(providerId);
+    const explicitInstance = settings.providerInstances[instanceId];
+    return explicitInstance === undefined || (explicitInstance.enabled ?? true);
+  });
   const fallback = fallbackEntry ? ProviderDriverKind.make(fallbackEntry[0]) : undefined;
   if (!fallback) {
+    // GLITCHY: do not fabricate a selection for a disabled stock provider.
+    // TextGeneration rejects disabled or forbidden selections before dispatch.
     return settings;
   }
 

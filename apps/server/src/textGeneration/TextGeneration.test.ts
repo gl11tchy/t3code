@@ -27,6 +27,7 @@ const makeStubTextGeneration = (
 const makeStubInstance = (
   instanceId: ProviderInstanceId,
   textGeneration: TextGeneration.TextGeneration["Service"],
+  enabled = true,
 ): ProviderInstance =>
   ({
     instanceId,
@@ -36,7 +37,7 @@ const makeStubInstance = (
       continuationKey: `${instanceId}:test`,
     },
     displayName: undefined,
-    enabled: true,
+    enabled,
     snapshot: {} as ProviderInstance["snapshot"],
     adapter: {} as ProviderInstance["adapter"],
     textGeneration,
@@ -116,6 +117,69 @@ describe("makeTextGenerationFromRegistry", () => {
         expect(result.failure.operation).toBe("generateBranchName");
         expect(result.failure.detail).toContain("missing_instance");
       }
+    }),
+  );
+
+  it.effect("rejects a disabled instance before calling its text generator", () =>
+    Effect.gen(function* () {
+      const disabledId = ProviderInstanceId.make("codex_disabled");
+      let called = false;
+      const disabled = makeStubInstance(
+        disabledId,
+        makeStubTextGeneration({
+          generateBranchName: () => {
+            called = true;
+            return Effect.succeed({ branch: "should-not-run" });
+          },
+        }),
+        false,
+      );
+      const tg = TextGeneration.makeTextGenerationFromRegistry(makeStubRegistry([disabled]));
+
+      const result = yield* tg
+        .generateBranchName({
+          cwd: process.cwd(),
+          message: "anything",
+          modelSelection: createModelSelection(disabledId, "gpt-5"),
+        })
+        .pipe(Effect.result);
+
+      expect(Result.isFailure(result)).toBe(true);
+      if (Result.isFailure(result)) {
+        expect(result.failure.detail).toContain("disabled");
+      }
+      expect(called).toBe(false);
+    }),
+  );
+
+  it.effect("rejects a forbidden model before calling its text generator", () =>
+    Effect.gen(function* () {
+      const customId = ProviderInstanceId.make("custom_provider");
+      let called = false;
+      const custom = makeStubInstance(
+        customId,
+        makeStubTextGeneration({
+          generateBranchName: () => {
+            called = true;
+            return Effect.succeed({ branch: "should-not-run" });
+          },
+        }),
+      );
+      const tg = TextGeneration.makeTextGenerationFromRegistry(makeStubRegistry([custom]));
+
+      const result = yield* tg
+        .generateBranchName({
+          cwd: process.cwd(),
+          message: "anything",
+          modelSelection: createModelSelection(customId, "claude-haiku-4-5"),
+        })
+        .pipe(Effect.result);
+
+      expect(Result.isFailure(result)).toBe(true);
+      if (Result.isFailure(result)) {
+        expect(result.failure.detail).toContain("not allowed");
+      }
+      expect(called).toBe(false);
     }),
   );
 });

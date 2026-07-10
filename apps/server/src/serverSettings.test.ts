@@ -264,6 +264,43 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 
+  it.effect("does not select a disabled fallback when every stock provider is disabled", () =>
+    Effect.gen(function* () {
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      const customId = ProviderInstanceId.make("ollama_local");
+
+      const next = yield* serverSettings.updateSettings({
+        providers: {
+          codex: { enabled: false },
+          claudeAgent: { enabled: false },
+          cursor: { enabled: false },
+          grok: { enabled: false },
+          opencode: { enabled: false },
+        },
+        providerInstances: {
+          [customId]: {
+            driver: ProviderDriverKind.make("ollama"),
+            enabled: true,
+            config: {},
+          },
+        },
+        textGenerationModelSelection: {
+          instanceId: customId,
+          model: "claude-haiku-4.5",
+        },
+      });
+
+      assert.deepEqual(next.textGenerationModelSelection, {
+        instanceId: customId,
+        model: "claude-haiku-4.5",
+      });
+      assert.notEqual(
+        next.textGenerationModelSelection.instanceId,
+        DEFAULT_SERVER_SETTINGS.textGenerationModelSelection.instanceId,
+      );
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
   it.effect("preserves model when switching providers via textGenerationModelSelection", () =>
     Effect.gen(function* () {
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
@@ -358,6 +395,39 @@ it.layer(NodeServices.layer)("server settings", (it) => {
           model: "openai/gpt-5.5",
         });
       }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
+  it.effect("skips disabled explicit default instances when choosing a fallback", () =>
+    Effect.gen(function* () {
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      const codexId = ProviderInstanceId.make("codex");
+
+      const next = yield* serverSettings.updateSettings({
+        providers: {
+          codex: { enabled: true },
+          claudeAgent: { enabled: true },
+          cursor: { enabled: false },
+          grok: { enabled: false },
+          opencode: { enabled: false },
+        },
+        providerInstances: {
+          [codexId]: {
+            driver: ProviderDriverKind.make("codex"),
+            enabled: false,
+            config: {},
+          },
+        },
+        textGenerationModelSelection: {
+          instanceId: codexId,
+          model: "gpt-5.4",
+        },
+      });
+
+      assert.deepEqual(next.textGenerationModelSelection, {
+        instanceId: ProviderInstanceId.make("claudeAgent"),
+        model: "claude-sonnet-5",
+      });
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 
   it.effect("preserves enabled text generation selections for non-built-in drivers", () =>

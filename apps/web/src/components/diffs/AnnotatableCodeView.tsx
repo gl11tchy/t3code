@@ -36,6 +36,12 @@ interface DiffCommentAnnotationGroup {
 type DiffCommentLineAnnotation = DiffLineAnnotation<DiffCommentAnnotationGroup>;
 export type AnnotatableCodeViewHandle = CodeViewHandle<DiffCommentAnnotationGroup>;
 const EMPTY_REVIEW_COMMENTS: ReadonlyArray<ReviewCommentContext> = [];
+const EMPTY_SECTION_MATCHES: ReadonlyArray<ReviewCommentSectionMatch> = [];
+
+interface ReviewCommentSectionMatch {
+  readonly sectionId: string;
+  readonly sectionTitle?: string;
+}
 
 function annotationSide(range: SelectedLineRange): AnnotationSide {
   return (range.endSide ?? range.side) === "deletions" ? "deletions" : "additions";
@@ -78,6 +84,7 @@ interface AnnotatableCodeViewProps {
     collapsed: boolean;
   }>;
   sectionId: string;
+  restoreSections?: ReadonlyArray<ReviewCommentSectionMatch>;
   sectionTitle: string;
   composerDraftTarget: ScopedThreadRef | DraftId;
   options: NonNullable<CodeViewProps<DiffCommentAnnotationGroup>["options"]>;
@@ -97,6 +104,7 @@ interface DiffSelectionContext {
 export function AnnotatableCodeView({
   files,
   sectionId,
+  restoreSections = EMPTY_SECTION_MATCHES,
   sectionTitle,
   composerDraftTarget,
   options,
@@ -118,6 +126,10 @@ export function AnnotatableCodeView({
     annotation: DiffCommentLineAnnotation;
   } | null>(null);
 
+  const reviewSectionMatches = useMemo(
+    () => [{ sectionId }, ...restoreSections],
+    [restoreSections, sectionId],
+  );
   const filesByKey = useMemo(() => new Map(files.map((file) => [file.fileKey, file])), [files]);
   const items = useMemo<CodeViewDiffItem<DiffCommentAnnotationGroup>[]>(
     () =>
@@ -125,7 +137,11 @@ export function AnnotatableCodeView({
         const persisted = reviewComments
           .filter(
             (comment) =>
-              comment.sectionId === sectionId &&
+              reviewSectionMatches.some(
+                (match) =>
+                  match.sectionId === comment.sectionId &&
+                  (match.sectionTitle === undefined || match.sectionTitle === comment.sectionTitle),
+              ) &&
               comment.filePath === filePath &&
               (comment.fenceLanguage ?? "diff") === "diff",
           )
@@ -159,7 +175,7 @@ export function AnnotatableCodeView({
           ),
         };
       }),
-    [draft, files, reviewComments, sectionId],
+    [draft, files, reviewComments, reviewSectionMatches],
   );
 
   const removeEntry = useCallback(

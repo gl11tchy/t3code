@@ -1,4 +1,10 @@
 // GLITCHY (gl11tchy): fork-owned orchestration layer — pure fleet/spawn presentation logic
+import type {
+  ReviewDiffPreviewSource,
+  ReviewDiffPreviewSourceKind,
+  ThreadId,
+} from "@t3tools/contracts";
+
 import type { SidebarThreadSummary } from "../../types";
 import type { ThreadStatusPill } from "../Sidebar.logic";
 import {
@@ -10,6 +16,59 @@ import {
 
 /** Canonical route for the orchestrator dashboard (file-based TanStack route). */
 export const ORCHESTRATOR_ROUTE_PATH = "/glitch/orchestrator" as const;
+
+/**
+ * Show the committed branch range first and the uncommitted working tree
+ * second. A PR can contain both, so neither source may hide the other.
+ */
+export function selectVisibleDiffPreviewSources(
+  sources: ReadonlyArray<ReviewDiffPreviewSource>,
+): ReviewDiffPreviewSource[] {
+  return (["branch-range", "working-tree"] as const).flatMap((kind) => {
+    const source = sources.find((candidate) => candidate.kind === kind);
+    return source && source.diff.trim().length > 0 ? [source] : [];
+  });
+}
+
+export interface DiffReviewSectionIdentity {
+  readonly sectionId: string;
+  readonly sectionTitle: string;
+  readonly restoreSections: ReadonlyArray<{
+    readonly sectionId: string;
+    readonly sectionTitle?: string;
+  }>;
+}
+
+/** Keep draft comments visible when changes move between diff sources. */
+export function getDiffReviewSectionIdentity(
+  threadId: ThreadId,
+  sourceKind: ReviewDiffPreviewSourceKind,
+  visibleSourceKinds: ReadonlyArray<ReviewDiffPreviewSourceKind>,
+): DiffReviewSectionIdentity {
+  const baseSectionId = `glitch-diff:${threadId}`;
+  const sectionId = `${baseSectionId}:${sourceKind}`;
+  const sectionTitle = sourceKind === "working-tree" ? "Working tree" : "Branch changes";
+  const otherSourceKind = sourceKind === "working-tree" ? "branch-range" : "working-tree";
+
+  if (visibleSourceKinds.length === 1) {
+    return {
+      sectionId,
+      sectionTitle,
+      restoreSections: [
+        { sectionId: baseSectionId },
+        { sectionId: `${baseSectionId}:${otherSourceKind}` },
+      ],
+    };
+  }
+
+  return {
+    sectionId,
+    sectionTitle,
+    // Legacy comments used one base id, so use their saved title to keep them
+    // attached to the correct source when both diffs are visible.
+    restoreSections: [{ sectionId: baseSectionId, sectionTitle }],
+  };
+}
 
 /**
  * Active worktree thread: non-empty worktreePath and not archived.
