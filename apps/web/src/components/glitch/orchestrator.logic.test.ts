@@ -67,22 +67,28 @@ describe("getDiffReviewSectionIdentity", () => {
   it("restores working-tree comments after changes are committed", () => {
     expect(getDiffReviewSectionIdentity(threadId, "branch-range", ["branch-range"])).toEqual({
       sectionId: "glitch-diff:thread-1:branch-range",
-      restoreSectionIds: ["glitch-diff:thread-1", "glitch-diff:thread-1:working-tree"],
+      sectionTitle: "Branch changes",
+      restoreSections: [
+        { sectionId: "glitch-diff:thread-1" },
+        { sectionId: "glitch-diff:thread-1:working-tree" },
+      ],
     });
   });
 
-  it("keeps source comments separate while both diffs are visible", () => {
+  it("routes legacy comments by their saved title while both diffs are visible", () => {
     expect(
       getDiffReviewSectionIdentity(threadId, "branch-range", ["branch-range", "working-tree"]),
     ).toEqual({
       sectionId: "glitch-diff:thread-1:branch-range",
-      restoreSectionIds: [],
+      sectionTitle: "Branch changes",
+      restoreSections: [{ sectionId: "glitch-diff:thread-1", sectionTitle: "Branch changes" }],
     });
     expect(
       getDiffReviewSectionIdentity(threadId, "working-tree", ["branch-range", "working-tree"]),
     ).toEqual({
       sectionId: "glitch-diff:thread-1:working-tree",
-      restoreSectionIds: ["glitch-diff:thread-1"],
+      sectionTitle: "Working tree",
+      restoreSections: [{ sectionId: "glitch-diff:thread-1", sectionTitle: "Working tree" }],
     });
   });
 });

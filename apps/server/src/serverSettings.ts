@@ -248,7 +248,14 @@ function resolveTextGenerationDriver(
 }
 
 function fallbackTextGenerationProvider(settings: ServerSettings): ServerSettings {
-  const fallbackEntry = Object.entries(settings.providers).find(([, provider]) => provider.enabled);
+  const fallbackEntry = Object.entries(settings.providers).find(([providerId, provider]) => {
+    if (!provider.enabled) {
+      return false;
+    }
+    const instanceId = ProviderInstanceId.make(providerId);
+    const explicitInstance = settings.providerInstances[instanceId];
+    return explicitInstance === undefined || (explicitInstance.enabled ?? true);
+  });
   const fallback = fallbackEntry ? ProviderDriverKind.make(fallbackEntry[0]) : undefined;
   if (!fallback) {
     // GLITCHY: do not fabricate a selection for a disabled stock provider.

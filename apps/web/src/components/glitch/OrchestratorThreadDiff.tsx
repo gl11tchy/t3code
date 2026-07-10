@@ -130,7 +130,7 @@ export function OrchestratorThreadDiff({
   return (
     <div className="divide-y divide-border/50">
       {renderableSources.map(({ source, renderablePatch, codeViewFiles, sectionIdentity }) => {
-        const sectionTitle = source.kind === "working-tree" ? "Working tree" : "Branch changes";
+        const { sectionTitle } = sectionIdentity;
         return renderablePatch.kind === "raw" ? (
           <div key={source.id} className="space-y-2 px-3 py-2">
             <p className="font-mono text-[11px] font-medium text-foreground">{sectionTitle}</p>
@@ -147,7 +147,7 @@ export function OrchestratorThreadDiff({
             className="diff-render-surface max-h-[420px] overflow-auto"
             files={codeViewFiles}
             sectionId={sectionIdentity.sectionId}
-            restoreSectionIds={sectionIdentity.restoreSectionIds}
+            restoreSections={sectionIdentity.restoreSections}
             sectionTitle={sectionTitle}
             composerDraftTarget={threadRef}
             renderHeaderPrefix={() => null}

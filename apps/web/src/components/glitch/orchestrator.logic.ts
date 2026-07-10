@@ -32,7 +32,11 @@ export function selectVisibleDiffPreviewSources(
 
 export interface DiffReviewSectionIdentity {
   readonly sectionId: string;
-  readonly restoreSectionIds: ReadonlyArray<string>;
+  readonly sectionTitle: string;
+  readonly restoreSections: ReadonlyArray<{
+    readonly sectionId: string;
+    readonly sectionTitle?: string;
+  }>;
 }
 
 /** Keep draft comments visible when changes move between diff sources. */
@@ -43,19 +47,26 @@ export function getDiffReviewSectionIdentity(
 ): DiffReviewSectionIdentity {
   const baseSectionId = `glitch-diff:${threadId}`;
   const sectionId = `${baseSectionId}:${sourceKind}`;
+  const sectionTitle = sourceKind === "working-tree" ? "Working tree" : "Branch changes";
   const otherSourceKind = sourceKind === "working-tree" ? "branch-range" : "working-tree";
 
   if (visibleSourceKinds.length === 1) {
     return {
       sectionId,
-      restoreSectionIds: [baseSectionId, `${baseSectionId}:${otherSourceKind}`],
+      sectionTitle,
+      restoreSections: [
+        { sectionId: baseSectionId },
+        { sectionId: `${baseSectionId}:${otherSourceKind}` },
+      ],
     };
   }
 
   return {
     sectionId,
-    // The old single-source view preferred the working tree when both existed.
-    restoreSectionIds: sourceKind === "working-tree" ? [baseSectionId] : [],
+    sectionTitle,
+    // Legacy comments used one base id, so use their saved title to keep them
+    // attached to the correct source when both diffs are visible.
+    restoreSections: [{ sectionId: baseSectionId, sectionTitle }],
   };
 }
 
