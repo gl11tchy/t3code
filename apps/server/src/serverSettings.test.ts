@@ -264,6 +264,40 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 
+  it.effect("fails closed away from Haiku when every stock provider is disabled", () =>
+    Effect.gen(function* () {
+      const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
+      const customId = ProviderInstanceId.make("ollama_local");
+
+      const next = yield* serverSettings.updateSettings({
+        providers: {
+          codex: { enabled: false },
+          claudeAgent: { enabled: false },
+          cursor: { enabled: false },
+          grok: { enabled: false },
+          opencode: { enabled: false },
+        },
+        providerInstances: {
+          [customId]: {
+            driver: ProviderDriverKind.make("ollama"),
+            enabled: true,
+            config: {},
+          },
+        },
+        textGenerationModelSelection: {
+          instanceId: customId,
+          model: "claude-haiku-4.5",
+        },
+      });
+
+      assert.deepEqual(
+        next.textGenerationModelSelection,
+        DEFAULT_SERVER_SETTINGS.textGenerationModelSelection,
+      );
+      assert.notMatch(next.textGenerationModelSelection.model, /haiku/i);
+    }).pipe(Effect.provide(makeServerSettingsLayer())),
+  );
+
   it.effect("preserves model when switching providers via textGenerationModelSelection", () =>
     Effect.gen(function* () {
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;

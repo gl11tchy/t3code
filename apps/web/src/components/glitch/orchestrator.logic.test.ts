@@ -1,5 +1,11 @@
 // GLITCHY (gl11tchy): fork-owned orchestration layer — unit tests for fleet/spawn presentation logic
-import { EnvironmentId, ProjectId, ProviderInstanceId, ThreadId } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  ProjectId,
+  ProviderInstanceId,
+  ThreadId,
+  type ReviewDiffPreviewSource,
+} from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { DEFAULT_INTERACTION_MODE, DEFAULT_RUNTIME_MODE } from "../../types";
@@ -11,11 +17,48 @@ import {
   isWorktreeThread,
   MAX_SPAWN_COUNT,
   MIN_SPAWN_COUNT,
+  selectVisibleDiffPreviewSources,
   stepSpawnCount,
   summarizeFleetStatuses,
 } from "./orchestrator.logic";
 
 const environmentId = EnvironmentId.make("environment-local");
+
+function makeDiffSource(
+  kind: ReviewDiffPreviewSource["kind"],
+  diff: string,
+): ReviewDiffPreviewSource {
+  return {
+    id: kind,
+    kind,
+    title: kind === "branch-range" ? "Against main" : "Dirty worktree",
+    baseRef: kind === "branch-range" ? "main" : "HEAD",
+    headRef: kind === "branch-range" ? "feature" : null,
+    diff,
+    diffHash: `${kind}-hash`,
+    truncated: false,
+  };
+}
+
+describe("selectVisibleDiffPreviewSources", () => {
+  it("keeps both committed and uncommitted changes in PR-preview order", () => {
+    const visible = selectVisibleDiffPreviewSources([
+      makeDiffSource("working-tree", "working patch"),
+      makeDiffSource("branch-range", "branch patch"),
+    ]);
+
+    expect(visible.map((source) => source.kind)).toEqual(["branch-range", "working-tree"]);
+  });
+
+  it("drops empty sources without hiding a non-empty source", () => {
+    const visible = selectVisibleDiffPreviewSources([
+      makeDiffSource("branch-range", "  "),
+      makeDiffSource("working-tree", "working patch"),
+    ]);
+
+    expect(visible.map((source) => source.kind)).toEqual(["working-tree"]);
+  });
+});
 
 function makeShell(overrides: Partial<SidebarThreadSummary> = {}): SidebarThreadSummary {
   return {

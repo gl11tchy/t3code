@@ -14,6 +14,7 @@ import { useEnvironmentQuery } from "../../state/query";
 import { reviewEnvironment } from "../../state/review";
 import { AnnotatableCodeView } from "../diffs/AnnotatableCodeView";
 import { Spinner } from "../ui/spinner";
+import { selectVisibleDiffPreviewSources } from "./orchestrator.logic";
 
 interface OrchestratorThreadDiffProps {
   environmentId: EnvironmentId;
@@ -56,44 +57,36 @@ export function OrchestratorThreadDiff({
       : null,
   );
 
-  // Prefer uncommitted working-tree changes (what commit_push_pr will stage).
-  // If the tree is clean, fall back to the branch-range preview so committed
-  // but unpushed work is still visible before opening a PR.
-  const selectedSource = useMemo(() => {
-    const sources = diffPreview.data?.sources ?? [];
-    const workingTree = sources.find((source) => source.kind === "working-tree");
-    const branchRange = sources.find((source) => source.kind === "branch-range");
-    if (workingTree && workingTree.diff.trim().length > 0) {
-      return workingTree;
-    }
-    return branchRange ?? workingTree ?? null;
-  }, [diffPreview.data?.sources]);
-
   const { resolvedTheme } = useTheme();
-  const patch = selectedSource?.diff;
-
-  const renderablePatch = useMemo(
-    () => getRenderablePatch(patch, `glitch-orchestrator:${resolvedTheme}`),
-    [patch, resolvedTheme],
+  const renderableSources = useMemo(
+    () =>
+      selectVisibleDiffPreviewSources(diffPreview.data?.sources ?? []).flatMap((source) => {
+        const renderablePatch = getRenderablePatch(
+          source.diff,
+          `glitch-orchestrator:${source.kind}:${resolvedTheme}`,
+        );
+        if (!renderablePatch) {
+          return [];
+        }
+        const codeViewFiles =
+          renderablePatch.kind === "files"
+            ? renderablePatch.files
+                .toSorted((left, right) =>
+                  resolveFileDiffPath(left).localeCompare(resolveFileDiffPath(right), undefined, {
+                    sensitivity: "base",
+                  }),
+                )
+                .map((fileDiff) => ({
+                  fileDiff,
+                  filePath: resolveFileDiffPath(fileDiff),
+                  fileKey: buildFileDiffRenderKey(fileDiff),
+                  collapsed: false,
+                }))
+            : [];
+        return [{ source, renderablePatch, codeViewFiles }];
+      }),
+    [diffPreview.data?.sources, resolvedTheme],
   );
-
-  const codeViewFiles = useMemo(() => {
-    if (renderablePatch?.kind !== "files") {
-      return [];
-    }
-    return renderablePatch.files
-      .toSorted((left, right) =>
-        resolveFileDiffPath(left).localeCompare(resolveFileDiffPath(right), undefined, {
-          sensitivity: "base",
-        }),
-      )
-      .map((fileDiff) => ({
-        fileDiff,
-        filePath: resolveFileDiffPath(fileDiff),
-        fileKey: buildFileDiffRenderKey(fileDiff),
-        collapsed: false,
-      }));
-  }, [renderablePatch]);
 
   if (!enabled) {
     return null;
@@ -120,38 +113,45 @@ export function OrchestratorThreadDiff({
     );
   }
 
-  if (!patch || patch.trim().length === 0) {
+  if (renderableSources.length === 0) {
     return <StatusLine>No changes in this worktree.</StatusLine>;
   }
 
-  if (renderablePatch?.kind === "raw") {
-    return (
-      <div className="space-y-2 px-3 py-2">
-        <p className="font-mono text-[11px] text-muted-foreground/75">{renderablePatch.reason}</p>
-        <pre className="overflow-auto rounded-md bg-muted/40 p-2 font-mono text-[11px] leading-relaxed">
-          {renderablePatch.text}
-        </pre>
-      </div>
-    );
-  }
-
   return (
-    <AnnotatableCodeView
-      className="diff-render-surface max-h-[420px] overflow-auto"
-      files={codeViewFiles}
-      sectionId={`glitch-diff:${threadId}`}
-      sectionTitle={selectedSource?.kind === "working-tree" ? "Working tree" : "Branch changes"}
-      composerDraftTarget={threadRef}
-      renderHeaderPrefix={() => null}
-      options={{
-        diffStyle: "unified",
-        lineDiffType: "none",
-        overflow: "scroll",
-        theme: resolveDiffThemeName(resolvedTheme),
-        themeType: resolvedTheme as "light" | "dark",
-        stickyHeaders: true,
-        layout: { paddingTop: 8, paddingBottom: 8, gap: 8 },
-      }}
-    />
+    <div className="divide-y divide-border/50">
+      {renderableSources.map(({ source, renderablePatch, codeViewFiles }) => {
+        const sectionTitle = source.kind === "working-tree" ? "Working tree" : "Branch changes";
+        return renderablePatch.kind === "raw" ? (
+          <div key={source.id} className="space-y-2 px-3 py-2">
+            <p className="font-mono text-[11px] font-medium text-foreground">{sectionTitle}</p>
+            <p className="font-mono text-[11px] text-muted-foreground/75">
+              {renderablePatch.reason}
+            </p>
+            <pre className="overflow-auto rounded-md bg-muted/40 p-2 font-mono text-[11px] leading-relaxed">
+              {renderablePatch.text}
+            </pre>
+          </div>
+        ) : (
+          <AnnotatableCodeView
+            key={source.id}
+            className="diff-render-surface max-h-[420px] overflow-auto"
+            files={codeViewFiles}
+            sectionId={`glitch-diff:${threadId}:${source.kind}`}
+            sectionTitle={sectionTitle}
+            composerDraftTarget={threadRef}
+            renderHeaderPrefix={() => null}
+            options={{
+              diffStyle: "unified",
+              lineDiffType: "none",
+              overflow: "scroll",
+              theme: resolveDiffThemeName(resolvedTheme),
+              themeType: resolvedTheme as "light" | "dark",
+              stickyHeaders: true,
+              layout: { paddingTop: 8, paddingBottom: 8, gap: 8 },
+            }}
+          />
+        );
+      })}
+    </div>
   );
 }

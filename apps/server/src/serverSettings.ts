@@ -251,7 +251,15 @@ function fallbackTextGenerationProvider(settings: ServerSettings): ServerSetting
   const fallbackEntry = Object.entries(settings.providers).find(([, provider]) => provider.enabled);
   const fallback = fallbackEntry ? ProviderDriverKind.make(fallbackEntry[0]) : undefined;
   if (!fallback) {
-    return settings;
+    // GLITCHY: fail closed when no enabled stock provider can replace a
+    // forbidden Haiku selection. The safe Codex default may be unavailable,
+    // but it must never silently preserve and dispatch the forbidden model.
+    return isForbiddenTextGenerationModel(settings.textGenerationModelSelection.model)
+      ? {
+          ...settings,
+          textGenerationModelSelection: DEFAULT_SERVER_SETTINGS.textGenerationModelSelection,
+        }
+      : settings;
   }
 
   return {
