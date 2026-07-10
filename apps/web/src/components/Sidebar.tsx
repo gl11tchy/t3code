@@ -166,6 +166,7 @@ import {
 } from "./ui/number-field";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "./ui/select";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "./ui/tooltip";
+import { GlitchOrchestratorNavItem } from "./glitch/GlitchOrchestratorNavItem"; // GLITCHY: fork-owned nav entry
 import {
   SidebarContent,
   SidebarFooter,
@@ -2816,6 +2817,7 @@ const SidebarChromeFooter = memo(function SidebarChromeFooter() {
       <SidebarProviderUpdatePill />
       <SidebarUpdatePill />
       <SidebarMenu>
+        <GlitchOrchestratorNavItem /> {/* GLITCHY: fork-owned orchestrator nav entry */}
         <SidebarMenuItem>
           <SidebarMenuButton
             size="sm"

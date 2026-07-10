@@ -18,10 +18,13 @@
         const themeColorMeta = document.querySelector('meta[name="theme-color"]');
         try {
           const storedTheme = window.localStorage.getItem("t3code:theme");
+          // Match useTheme DEFAULT_THEME_SNAPSHOT: missing storage defaults to
+          // "dark" (not "system") so a light OS preference does not flash light
+          // before the React bundle applies the dark-first fork default.
           const theme =
             storedTheme === "light" || storedTheme === "dark" || storedTheme === "system"
               ? storedTheme
-              : "system";
+              : "dark";
           const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
           const isDark = theme === "dark" || (theme === "system" && prefersDark);
           document.documentElement.classList.toggle("dark", isDark);
@@ -84,7 +87,8 @@
         object-fit: contain;
       }
     </style>
-    <title>T3 Code (Alpha)</title>
+    <!-- GLITCHY: fork rebrand -->
+    <title>Glitchy Code (Alpha)</title>
   </head>
   <body>
     <div id="root">

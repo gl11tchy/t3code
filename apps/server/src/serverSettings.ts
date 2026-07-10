@@ -25,6 +25,7 @@ import {
   ServerSettingsError,
   type ServerSettingsPatch,
 } from "@t3tools/contracts";
+import { isForbiddenTextGenerationModel } from "@t3tools/shared/glitchModelPolicy";
 import * as Cache from "effect/Cache";
 import * as Cause from "effect/Cause";
 import * as Context from "effect/Context";
@@ -174,26 +175,76 @@ const getLegacyProviderSettings = (
   (settings.providers as Record<string, LegacyProviderSettings | undefined>)[provider];
 
 /**
- * Ensure the `textGenerationModelSelection` points to an enabled provider.
- * If the selected provider is disabled, fall back to the first enabled
- * provider with its default model.  This is applied at read-time so the
- * persisted preference is preserved for when a provider is re-enabled.
+ * Ensure the `textGenerationModelSelection` points to an enabled provider and
+ * is not a fork-forbidden model (e.g. Claude Haiku). If the selected provider
+ * is disabled, fall back to the first enabled provider with its default model.
+ * Applied at read-time so the on-disk preference can stay unchanged while
+ * runtime consumers never see a disabled or forbidden selection.
  */
 function resolveTextGenerationProvider(settings: ServerSettings): ServerSettings {
   const selection = settings.textGenerationModelSelection;
   const instanceConfig = settings.providerInstances[selection.instanceId];
+  let resolved: ServerSettings;
   if (instanceConfig !== undefined) {
-    return (instanceConfig.enabled ?? true) ? settings : fallbackTextGenerationProvider(settings);
-  }
-
-  if (
+    resolved =
+      (instanceConfig.enabled ?? true) ? settings : fallbackTextGenerationProvider(settings);
+  } else if (
     isProviderDriverKind(selection.instanceId) &&
     getLegacyProviderSettings(settings, selection.instanceId)?.enabled
   ) {
+    resolved = settings;
+  } else {
+    resolved = fallbackTextGenerationProvider(settings);
+  }
+
+  return rewriteForbiddenTextGenerationModel(resolved);
+}
+
+/**
+ * GLITCHY: upgraded installs may still have Haiku as the persisted text-
+ * generation model. Rewrite those at read time to the per-driver default
+ * (Claude → sonnet) so GitManager commit/PR copy never routes to Haiku.
+ *
+ * Only rewrite in-place when the driver has a known default model. Otherwise
+ * fall back the whole selection — never pair a custom/third-party instanceId
+ * with the global Codex default, which that instance may not serve.
+ */
+function rewriteForbiddenTextGenerationModel(settings: ServerSettings): ServerSettings {
+  const selection = settings.textGenerationModelSelection;
+  if (!isForbiddenTextGenerationModel(selection.model)) {
     return settings;
   }
 
+  const driver = resolveTextGenerationDriver(settings, selection.instanceId);
+  const knownDefault =
+    (driver ? DEFAULT_GIT_TEXT_GENERATION_MODEL_BY_PROVIDER[driver] : undefined) ??
+    (driver ? DEFAULT_MODEL_BY_PROVIDER[driver] : undefined);
+
+  if (knownDefault && knownDefault !== selection.model) {
+    return {
+      ...settings,
+      textGenerationModelSelection: {
+        instanceId: selection.instanceId,
+        model: knownDefault,
+      } satisfies ModelSelection,
+    };
+  }
+
   return fallbackTextGenerationProvider(settings);
+}
+
+function resolveTextGenerationDriver(
+  settings: ServerSettings,
+  instanceId: ProviderInstanceId,
+): ProviderDriverKind | undefined {
+  const instanceConfig = settings.providerInstances[instanceId];
+  if (instanceConfig?.driver) {
+    return instanceConfig.driver;
+  }
+  if (isProviderDriverKind(instanceId)) {
+    return instanceId;
+  }
+  return undefined;
 }
 
 function fallbackTextGenerationProvider(settings: ServerSettings): ServerSettings {

@@ -1340,9 +1340,10 @@ export function resolveMockUpdateServerUrl(mockUpdateServerPort: number | undefi
 }
 
 export function resolveDesktopProductName(version: string): string {
+  // GLITCHY: fork rebrand (upstream: "T3 Code")
   return resolveDesktopUpdateChannel(version) === "nightly"
-    ? "T3 Code (Nightly)"
-    : (desktopPackageJson.productName ?? "T3 Code");
+    ? "Glitchy Code (Nightly)"
+    : (desktopPackageJson.productName ?? "Glitchy Code");
 }
 
 export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
