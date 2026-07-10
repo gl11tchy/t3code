@@ -264,7 +264,7 @@ it.layer(NodeServices.layer)("server settings", (it) => {
       }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 
-  it.effect("fails closed away from Haiku when every stock provider is disabled", () =>
+  it.effect("does not select a disabled fallback when every stock provider is disabled", () =>
     Effect.gen(function* () {
       const serverSettings = yield* ServerSettingsModule.ServerSettingsService;
       const customId = ProviderInstanceId.make("ollama_local");
@@ -290,11 +290,14 @@ it.layer(NodeServices.layer)("server settings", (it) => {
         },
       });
 
-      assert.deepEqual(
-        next.textGenerationModelSelection,
-        DEFAULT_SERVER_SETTINGS.textGenerationModelSelection,
+      assert.deepEqual(next.textGenerationModelSelection, {
+        instanceId: customId,
+        model: "claude-haiku-4.5",
+      });
+      assert.notEqual(
+        next.textGenerationModelSelection.instanceId,
+        DEFAULT_SERVER_SETTINGS.textGenerationModelSelection.instanceId,
       );
-      assert.notMatch(next.textGenerationModelSelection.model, /haiku/i);
     }).pipe(Effect.provide(makeServerSettingsLayer())),
   );
 

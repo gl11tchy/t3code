@@ -178,8 +178,8 @@ const getLegacyProviderSettings = (
  * Ensure the `textGenerationModelSelection` points to an enabled provider and
  * is not a fork-forbidden model (e.g. Claude Haiku). If the selected provider
  * is disabled, fall back to the first enabled provider with its default model.
- * Applied at read-time so the on-disk preference can stay unchanged while
- * runtime consumers never see a disabled or forbidden selection.
+ * Applied at read-time so the on-disk preference can stay unchanged. When no
+ * safe fallback exists, text generation rejects the selection before dispatch.
  */
 function resolveTextGenerationProvider(settings: ServerSettings): ServerSettings {
   const selection = settings.textGenerationModelSelection;
@@ -251,15 +251,9 @@ function fallbackTextGenerationProvider(settings: ServerSettings): ServerSetting
   const fallbackEntry = Object.entries(settings.providers).find(([, provider]) => provider.enabled);
   const fallback = fallbackEntry ? ProviderDriverKind.make(fallbackEntry[0]) : undefined;
   if (!fallback) {
-    // GLITCHY: fail closed when no enabled stock provider can replace a
-    // forbidden Haiku selection. The safe Codex default may be unavailable,
-    // but it must never silently preserve and dispatch the forbidden model.
-    return isForbiddenTextGenerationModel(settings.textGenerationModelSelection.model)
-      ? {
-          ...settings,
-          textGenerationModelSelection: DEFAULT_SERVER_SETTINGS.textGenerationModelSelection,
-        }
-      : settings;
+    // GLITCHY: do not fabricate a selection for a disabled stock provider.
+    // TextGeneration rejects disabled or forbidden selections before dispatch.
+    return settings;
   }
 
   return {

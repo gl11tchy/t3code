@@ -36,6 +36,7 @@ interface DiffCommentAnnotationGroup {
 type DiffCommentLineAnnotation = DiffLineAnnotation<DiffCommentAnnotationGroup>;
 export type AnnotatableCodeViewHandle = CodeViewHandle<DiffCommentAnnotationGroup>;
 const EMPTY_REVIEW_COMMENTS: ReadonlyArray<ReviewCommentContext> = [];
+const EMPTY_SECTION_IDS: ReadonlyArray<string> = [];
 
 function annotationSide(range: SelectedLineRange): AnnotationSide {
   return (range.endSide ?? range.side) === "deletions" ? "deletions" : "additions";
@@ -78,6 +79,7 @@ interface AnnotatableCodeViewProps {
     collapsed: boolean;
   }>;
   sectionId: string;
+  restoreSectionIds?: ReadonlyArray<string>;
   sectionTitle: string;
   composerDraftTarget: ScopedThreadRef | DraftId;
   options: NonNullable<CodeViewProps<DiffCommentAnnotationGroup>["options"]>;
@@ -97,6 +99,7 @@ interface DiffSelectionContext {
 export function AnnotatableCodeView({
   files,
   sectionId,
+  restoreSectionIds = EMPTY_SECTION_IDS,
   sectionTitle,
   composerDraftTarget,
   options,
@@ -118,6 +121,10 @@ export function AnnotatableCodeView({
     annotation: DiffCommentLineAnnotation;
   } | null>(null);
 
+  const reviewSectionIds = useMemo(
+    () => new Set([sectionId, ...restoreSectionIds]),
+    [restoreSectionIds, sectionId],
+  );
   const filesByKey = useMemo(() => new Map(files.map((file) => [file.fileKey, file])), [files]);
   const items = useMemo<CodeViewDiffItem<DiffCommentAnnotationGroup>[]>(
     () =>
@@ -125,7 +132,7 @@ export function AnnotatableCodeView({
         const persisted = reviewComments
           .filter(
             (comment) =>
-              comment.sectionId === sectionId &&
+              reviewSectionIds.has(comment.sectionId) &&
               comment.filePath === filePath &&
               (comment.fenceLanguage ?? "diff") === "diff",
           )
@@ -159,7 +166,7 @@ export function AnnotatableCodeView({
           ),
         };
       }),
-    [draft, files, reviewComments, sectionId],
+    [draft, files, reviewComments, reviewSectionIds],
   );
 
   const removeEntry = useCallback(

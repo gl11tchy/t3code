@@ -14,6 +14,7 @@ import type { SpawnWorktreeAgentsResult } from "./spawnWorktreeAgents.logic";
 import {
   describeSpawnOutcome,
   filterWorktreeThreads,
+  getDiffReviewSectionIdentity,
   isWorktreeThread,
   MAX_SPAWN_COUNT,
   MIN_SPAWN_COUNT,
@@ -57,6 +58,32 @@ describe("selectVisibleDiffPreviewSources", () => {
     ]);
 
     expect(visible.map((source) => source.kind)).toEqual(["working-tree"]);
+  });
+});
+
+describe("getDiffReviewSectionIdentity", () => {
+  const threadId = ThreadId.make("thread-1");
+
+  it("restores working-tree comments after changes are committed", () => {
+    expect(getDiffReviewSectionIdentity(threadId, "branch-range", ["branch-range"])).toEqual({
+      sectionId: "glitch-diff:thread-1:branch-range",
+      restoreSectionIds: ["glitch-diff:thread-1", "glitch-diff:thread-1:working-tree"],
+    });
+  });
+
+  it("keeps source comments separate while both diffs are visible", () => {
+    expect(
+      getDiffReviewSectionIdentity(threadId, "branch-range", ["branch-range", "working-tree"]),
+    ).toEqual({
+      sectionId: "glitch-diff:thread-1:branch-range",
+      restoreSectionIds: [],
+    });
+    expect(
+      getDiffReviewSectionIdentity(threadId, "working-tree", ["branch-range", "working-tree"]),
+    ).toEqual({
+      sectionId: "glitch-diff:thread-1:working-tree",
+      restoreSectionIds: ["glitch-diff:thread-1"],
+    });
   });
 });
 

@@ -1,5 +1,9 @@
 // GLITCHY (gl11tchy): fork-owned orchestration layer — pure fleet/spawn presentation logic
-import type { ReviewDiffPreviewSource } from "@t3tools/contracts";
+import type {
+  ReviewDiffPreviewSource,
+  ReviewDiffPreviewSourceKind,
+  ThreadId,
+} from "@t3tools/contracts";
 
 import type { SidebarThreadSummary } from "../../types";
 import type { ThreadStatusPill } from "../Sidebar.logic";
@@ -24,6 +28,35 @@ export function selectVisibleDiffPreviewSources(
     const source = sources.find((candidate) => candidate.kind === kind);
     return source && source.diff.trim().length > 0 ? [source] : [];
   });
+}
+
+export interface DiffReviewSectionIdentity {
+  readonly sectionId: string;
+  readonly restoreSectionIds: ReadonlyArray<string>;
+}
+
+/** Keep draft comments visible when changes move between diff sources. */
+export function getDiffReviewSectionIdentity(
+  threadId: ThreadId,
+  sourceKind: ReviewDiffPreviewSourceKind,
+  visibleSourceKinds: ReadonlyArray<ReviewDiffPreviewSourceKind>,
+): DiffReviewSectionIdentity {
+  const baseSectionId = `glitch-diff:${threadId}`;
+  const sectionId = `${baseSectionId}:${sourceKind}`;
+  const otherSourceKind = sourceKind === "working-tree" ? "branch-range" : "working-tree";
+
+  if (visibleSourceKinds.length === 1) {
+    return {
+      sectionId,
+      restoreSectionIds: [baseSectionId, `${baseSectionId}:${otherSourceKind}`],
+    };
+  }
+
+  return {
+    sectionId,
+    // The old single-source view preferred the working tree when both existed.
+    restoreSectionIds: sourceKind === "working-tree" ? [baseSectionId] : [],
+  };
 }
 
 /**
